@@ -63,7 +63,7 @@ pub fn get_storage_path() -> Result<PathBuf, String> {
     {
         let appdata =
             std::env::var("APPDATA").map_err(|_| "failed_to_get_appdata_env".to_string())?;
-        let path = PathBuf::from(appdata).join("Antigravity\\User\\globalStorage\\storage.json");
+        let path = PathBuf::from(appdata).join("Antigravity IDE\\User\\globalStorage\\storage.json");
         if path.exists() {
             return Ok(path);
         }
