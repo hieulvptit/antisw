@@ -78,7 +78,7 @@ pub fn get_storage_path() -> Result<PathBuf, String> {
         }
     }
 
-    Err("storage_json_not_found".to_string())
+    Err("storage_json_not_found_in_path".to_string())
 }
 
 /// Get directory of storage.json

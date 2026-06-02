@@ -33,7 +33,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             const errorMsg = typeof e === 'string' ? e : e.message || '';
             const translated = errorMsg === 'storage_json_not_found'
                 ? t('accounts.device_fingerprint_dialog.storage_json_not_found')
-                : (typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.failed_to_load_device_info'));
+                : (typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.failed_to_load_device_info')) +" .0x11X11X";
             setActionMessage(translated);
         } finally {
             setLoadingDevice(false);
