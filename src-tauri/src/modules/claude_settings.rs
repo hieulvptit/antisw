@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-pub const VNPAY_BASE_URL: &str = "https://genai.vnpay.vn/aicoding";
+pub const VNPAY_BASE_URL: &str = "https://genai.vnoffice.io.vn/aicoding";
 
 pub fn get_settings_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;

@@ -31,9 +31,10 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             setDeviceProfiles(res);
         } catch (e: any) {
             const errorMsg = typeof e === 'string' ? e : e.message || '';
-            const translated = errorMsg === 'storage_json_not_found'
-                ? t('accounts.device_fingerprint_dialog.storage_json_not_found')
-                : (typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.failed_to_load_device_info')) +" .0x11X11X";
+            const isStorageNotFound = errorMsg === 'storage_json_not_found' || errorMsg === 'storage_json_not_found_in_path';
+            const translated = isStorageNotFound
+                ? `${t('accounts.device_fingerprint_dialog.storage_json_not_found')} [ERR-STOR-001]`
+                : `${typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.failed_to_load_device_info')} [ERR-DEV-001]`;
             setActionMessage(translated);
         } finally {
             setLoadingDevice(false);
@@ -51,7 +52,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             setConfirmProfile(profile);
             setConfirmType('generate');
         } catch (e: any) {
-            setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.generation_failed'));
+            setActionMessage(`${typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.generation_failed')} [ERR-DEV-002]`);
         } finally {
             setActionLoading(null);
         }
@@ -67,7 +68,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             setConfirmType(null);
             await fetchDevice(account); // Refresh history
         } catch (e: any) {
-            setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.binding_failed'));
+            setActionMessage(`${typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.binding_failed')} [ERR-DEV-003]`);
         } finally {
             setActionLoading(null);
         }
@@ -92,7 +93,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             setConfirmType(null);
             await fetchDevice(account);
         } catch (e: any) {
-            setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.restoration_failed'));
+            setActionMessage(`${typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.restoration_failed')} [ERR-DEV-004]`);
         } finally {
             setActionLoading(null);
         }
@@ -106,7 +107,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             setActionMessage(t('accounts.device_fingerprint_dialog.restored'));
             await fetchDevice(account);
         } catch (e: any) {
-            setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.restoration_failed'));
+            setActionMessage(`${typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.restoration_failed')} [ERR-DEV-005]`);
         } finally {
             setActionLoading(null);
         }
@@ -120,7 +121,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             setActionMessage(t('accounts.device_fingerprint_dialog.deleted'));
             await fetchDevice(account);
         } catch (e: any) {
-            setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.deletion_failed'));
+            setActionMessage(`${typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.deletion_failed')} [ERR-DEV-006]`);
         } finally {
             setActionLoading(null);
         }
@@ -132,7 +133,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
             await accountService.openDeviceFolder();
             setActionMessage(t('accounts.device_fingerprint_dialog.directory_opened'));
         } catch (e: any) {
-            setActionMessage(typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.directory_open_failed'));
+            setActionMessage(`${typeof e === 'string' ? e : t('accounts.device_fingerprint_dialog.directory_open_failed')} [ERR-DEV-007]`);
         } finally {
             setActionLoading(null);
         }
