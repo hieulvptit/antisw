@@ -28,8 +28,6 @@ pub struct AppConfig {
     pub circuit_breaker: CircuitBreakerConfig, // [NEW] Circuit breaker configuration
     #[serde(default)]
     pub hidden_menu_items: Vec<String>, // Hidden menu item path list
-    #[serde(default)]
-    pub antigravity_vnpay_enabled: bool, // [NEW] Antigravity VNPAY mode - redirect Google API to VNPAY
     #[serde(default = "default_tracking_enabled")]
     pub tracking_enabled: bool, // [NEW] Enable/disable tracking
 }
@@ -193,7 +191,6 @@ impl AppConfig {
             pinned_quota_models: PinnedQuotaModelsConfig::default(),
             circuit_breaker: CircuitBreakerConfig::default(),
             hidden_menu_items: Vec::new(),
-            antigravity_vnpay_enabled: false,
             tracking_enabled: true,
         }
     }

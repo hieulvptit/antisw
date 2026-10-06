@@ -85,16 +85,6 @@ jobs:
             echo "Renamed assets to append Arch: $ARCH"
           fi
           
-          # 更新对应的 updater.json (指向重命名后的文件)
-          UPDATER_JSON="../../../updater/install.json"
-          if [ ! -f "$UPDATER_JSON" ]; then
-             UPDATER_JSON=$(find ../../../updater -name "*.json" | head -n 1)
-          fi
-          
-          if [ -f "$UPDATER_JSON" ]; then
-            echo "Updating $UPDATER_JSON to use renamed assets..."
-            sed -i '' "s/AntiSwitcher.app.tar.gz/AntiSwitcher_${ARCH}.app.tar.gz/g" "$UPDATER_JSON"
-          fi
 
       # 1. 上传 updater.json 到 Artifacts (供后续合并使用)
       - name: Upload updater json
@@ -179,7 +169,7 @@ jobs:
 
           # Read signatures for each platform
           MACOS_AARCH64_SIG=$(read_sig "*_aarch64.app.tar.gz.sig")
-          MACOS_X64_SIG=$(read_sig "*_x64.app.tar.gz.sig")
+          MACOS_X64_SIG=$(read_sig "*_universal.app.tar.gz.sig")
           WINDOWS_NSIS_SIG=$(read_sig "*_x64-setup.exe.sig")
           LINUX_AMD64_SIG=$(read_sig "*_amd64.AppImage.sig")
           LINUX_AARCH64_SIG=$(read_sig "*_aarch64.AppImage.sig")
@@ -211,23 +201,23 @@ jobs:
               pub_date: $pub_date,
               platforms: {
                 "darwin-aarch64": {
-                  url: "\($dl)/Antigravity.Tools_aarch64.app.tar.gz",
+                  url: "\($dl)/AntiSwitcher_aarch64.app.tar.gz",
                   signature: $mac_a64_sig
                 },
                 "darwin-x86_64": {
-                  url: "\($dl)/Antigravity.Tools_x64.app.tar.gz",
+                  url: "\($dl)/AntiSwitcher_universal.app.tar.gz",
                   signature: $mac_x64_sig
                 },
                 "windows-x86_64": {
-                  url: "\($dl)/Antigravity.Tools_\($ver)_x64-setup.exe",
+                  url: "\($dl)/AntiSwitcher_\($ver)_x64-setup.exe",
                   signature: $win_nsis_sig
                 },
                 "linux-x86_64": {
-                  url: "\($dl)/Antigravity.Tools_\($ver)_amd64.AppImage",
+                  url: "\($dl)/AntiSwitcher_\($ver)_amd64.AppImage",
                   signature: $linux_amd64_sig
                 },
                 "linux-aarch64": {
-                  url: "\($dl)/Antigravity.Tools_\($ver)_aarch64.AppImage",
+                  url: "\($dl)/AntiSwitcher_\($ver)_aarch64.AppImage",
                   signature: $linux_a64_sig
                 }
               }

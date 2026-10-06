@@ -42,7 +42,8 @@
         "create_success": "Tạo thành công",
         "update_success": "Cập nhật thành công",
         "delete_success": "Xóa thành công",
-        "copied": "Đã sao chép vào bộ nhớ tạm"
+        "copied": "Đã sao chép vào bộ nhớ tạm",
+        "copy_failed": "Sao chép thất bại"
     },
     "nav": {
         "dashboard": "Tổng quan",
@@ -76,7 +77,8 @@
         "switch_to_spanish_short": "ES",
         "switch_to_malay": "Chuyển sang Tiếng Mã Lai",
         "switch_to_malay_short": "MY",
-        "user_token": "Token người dùng"
+        "user_token": "Token người dùng",
+        "remote_terminal": "Terminal Từ xa"
     },
     "dashboard": {
         "hello": "Xin chào, Bạn 👋",
@@ -539,6 +541,13 @@
             "placeholder": "Nhập hướng dẫn hệ thống toàn cầu...\nVí dụ: Bạn là một nhà phát triển full-stack kỳ cựu chuyên về React và Rust. Trả lời bằng tiếng Việt.",
             "char_count": "{{count}} ký tự",
             "long_prompt_warning": "Hướng dẫn quá dài (hơn 2000 ký tự) và có thể tiêu tốn nhiều không gian ngữ cảnh."
+        },
+        "remote_terminal": {
+            "title": "Remote Terminal (SSO)",
+            "gateway_url_label": "SSO Gateway Base URL",
+            "gateway_url_placeholder": "https://sso.example.com",
+            "gateway_url_desc": "Địa chỉ gốc của SSO Gateway dùng để đăng nhập và lấy chứng chỉ SSH ngắn hạn cho màn hình Terminal Từ xa.",
+            "save": "Lưu"
         }
     },
     "tray": {
@@ -618,7 +627,6 @@
             "zai": {
                 "title": "Nhà cung cấp z.ai (GLM)",
                 "title_tooltip": "Upstream tương thích Anthropic tùy chọn cho giao thức Claude. Chỉ ảnh hưởng đến endpoint Anthropic; định tuyến tài khoản Google giữ nguyên.",
-                "subtitle": "Upstream tương thích Anthropic cho giao thức Claude.",
                 "enabled": "Đã bật",
                 "enabled_tooltip": "Bật định tuyến z.ai cho các request Anthropic theo chế độ điều phối đã chọn.",
                 "base_url": "Base URL",
@@ -693,7 +701,6 @@
             "scheduling": {
                 "title": "Điều phối & Xoay vòng Tài khoản",
                 "title_tooltip": "Kiểm soát cách phiên (session) gắn với tài khoản và cách xử lý giới hạn tốc độ (rate limit).",
-                "subtitle": "Tối ưu hóa Prompt Caching và xử lý rate limit cho mọi giao thức (OpenAI/Gemini/Claude).",
                 "mode": "Chế độ Điều phối",
                 "mode_tooltip": "Ưu tiên Cache: Cố định session với tài khoản, chờ nếu bị rate limit (tối đa hóa cache); Cân bằng: Cố định session, đổi tài khoản nếu bị rate limit; Hiệu năng: Xoay vòng (Round-robin) thuần túy.",
                 "modes": {
@@ -738,7 +745,6 @@
             },
             "cloudflared": {
                 "title": "Truy cập Công khai (Cloudflared)",
-                "subtitle": "Phơi bày dịch vụ cục bộ ra internet qua Cloudflare Tunnel",
                 "not_installed": "Cloudflared chưa được cài đặt",
                 "install_hint": "Cloudflared là công cụ tunnel miễn phí từ Cloudflare. Nó phơi bày proxy cục bộ của bạn ra internet mà không cần IP công khai hoặc chuyển tiếp cổng. Nhấp vào nút bên dưới để cài đặt.",
                 "install": "Cài đặt Ngay",
@@ -836,7 +842,6 @@
         },
         "router": {
             "title": "Bộ Định tuyến Model (Router)",
-            "subtitle": "Định tuyến model theo nhóm (Series) hoặc thêm ánh xạ chính xác.\nLưu ý: Các native model Claude (ví dụ: claude-opus-4-6-thinking) mặc định sẽ bỏ qua nhóm series và đi thẳng. Dùng \"Định tuyến Tùy chỉnh Cao cấp\" để ghi đè.",
             "subtitle_simple": "Tùy chỉnh định tuyến model với ký tự đại diện hoặc ánh xạ chính xác",
             "background_task_title": "Mô hình tác vụ nền",
             "background_task_desc": "Mô hình được sử dụng cho các tác vụ nền của Claude CLI như tạo tiêu đề, tóm tắt, v.v. (Mặc định: gemini-2.5-flash)",
@@ -893,7 +898,6 @@
         },
         "multi_protocol": {
             "title": "Hỗ trợ đa giao thức",
-            "subtitle": "Đồng bộ API và Key với công cụ của bạn",
             "description": "Proxy hỗ trợ các giao thức OpenAI, Anthropic và Gemini để dễ dàng tích hợp.",
             "openai_label": "OpenAI",
             "anthropic_label": "Anthropic",
@@ -907,7 +911,6 @@
         },
         "cli_sync": {
             "title": "Đồng bộ CLI",
-            "subtitle": "Đồng bộ URL API và Key hiện tại với các công cụ AI CLI của bạn",
             "card_title": "Cấu hình {{name}}",
             "status": {
                 "not_installed": "Chưa cài đặt",
@@ -1198,5 +1201,62 @@
         "placeholder_max_ips": "0 = Không giới hạn",
         "hint_max_ips": "0 nghĩa là không giới hạn",
         "hint_curfew": "Để trống để tắt. Dựa trên giờ máy chủ."
+    },
+    "remote_terminal": {
+        "login_button": "Đăng nhập SSO",
+        "login_button_loading": "Đang chờ đăng nhập SSO...",
+        "connect_button": "Kết nối",
+        "disconnect_button": "Ngắt kết nối",
+        "principal_label": "Người dùng",
+        "host_label": "Máy chủ",
+        "expires_label": "Hết hạn lúc",
+        "open_browser_hint": "Một cửa sổ trình duyệt sẽ mở để bạn đăng nhập bằng tài khoản SSO công ty.",
+        "gateway_not_configured": "Chưa cấu hình SSO Gateway URL. Vui lòng cấu hình trong Cài đặt.",
+        "session_ended": "Phiên làm việc từ xa đã kết thúc.",
+        "status": {
+            "idle": "Chưa kết nối",
+            "waiting_sso": "Đang chờ xác thực SSO trên trình duyệt...",
+            "sso_success": "Xác thực SSO thành công",
+            "connecting": "Đang kết nối SSH...",
+            "connected": "Đã kết nối",
+            "disconnected": "Đã ngắt kết nối",
+            "error": "Lỗi"
+        },
+        "toast": {
+            "login_failed": "Đăng nhập SSO thất bại",
+            "connect_failed": "Kết nối thất bại",
+            "sync_failed": "Đồng bộ workspace thất bại",
+            "write_failed": "Không thể gửi dữ liệu đến terminal"
+        },
+        "local_dir_label": "Thư mục làm việc cục bộ",
+        "local_dir_placeholder": "Chưa chọn thư mục",
+        "choose_folder_button": "Chọn thư mục",
+        "sync_now_button": "Đồng bộ ngay",
+        "sync": {
+            "idle": "Chưa đồng bộ",
+            "syncing": "Đang đồng bộ...",
+            "synced_ago": "Đã đồng bộ {{time}} trước",
+            "failed": "Đồng bộ thất bại",
+            "no_directory": "Vui lòng chọn thư mục làm việc cục bộ trước",
+            "pick_before_connect": "Chọn thư mục làm việc cục bộ để đồng bộ trước khi kết nối"
+        },
+        "add_folder_button": "Thêm thư mục",
+        "close_folder_tooltip": "Đóng tab thư mục",
+        "confirm_close_folder": "Thư mục này đang có terminal chạy. Đóng và dừng tất cả?",
+        "empty_state_add_folder": "Thêm một thư mục để đồng bộ lên máy chủ từ xa và bắt đầu một terminal.",
+        "terminal_tab_label": "Terminal {{index}}",
+        "terminal_closed_badge": "đã đóng",
+        "share_terminal_button": "Chia sẻ",
+        "share_terminal_tooltip": "Chia sẻ terminal bằng link hoặc mã QR",
+        "share_qr_title": "Chia sẻ Remote Terminal",
+        "share_qr_description": "Quét mã QR bằng điện thoại để mở terminal.",
+        "share_link_label": "Link chia sẻ terminal",
+        "share_qr_copied": "Link chia sẻ đã được sao chép vào clipboard.",
+        "close_terminal_tooltip": "Đóng terminal",
+        "no_terminals_yet": "Chưa có terminal nào trong thư mục này.",
+        "tool": {
+            "codex": "Codex",
+            "claude": "Claude Code"
+        }
     }
 }

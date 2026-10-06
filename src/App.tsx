@@ -1,12 +1,14 @@
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 
 import Layout from './components/layout/Layout';
 import Accounts from './pages/Accounts';
 import Settings from './pages/Settings';
+import RemoteTerminal from './pages/RemoteTerminal';
 import ThemeManager from './components/common/ThemeManager';
 import { UpdateNotification } from './components/UpdateNotification';
 import DebugConsole from './components/debug/DebugConsole';
 import { useEffect } from 'react';
+import { useViewStore } from './stores/useViewStore';
 import { useConfigStore } from './stores/useConfigStore';
 import { useAccountStore } from './stores/useAccountStore';
 import { useTranslation } from 'react-i18next';
@@ -24,11 +26,19 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
+        element: <Navigate to="/remote-terminal" replace />,
+      },
+      {
+        path: 'accounts',
         element: <Accounts />,
       },
       {
         path: 'settings',
         element: <Settings />,
+      },
+      {
+        path: 'remote-terminal',
+        element: <RemoteTerminal />,
       },
     ],
   },
@@ -62,26 +72,15 @@ function App() {
     }
   }, [config?.language, i18n]);
 
-  // Listen for tray events
+  // Listen for tray navigation and backend account refresh events
   useEffect(() => {
     if (!isTauri()) return;
     const unlistenPromises: Promise<() => void>[] = [];
 
-    // 监听托盘切换账号事件
     unlistenPromises.push(
-      listen('tray://account-switched', () => {
-        console.log('[App] Tray account switched, refreshing...');
-        fetchCurrentAccount();
-        fetchAccounts();
-      })
-    );
-
-    // 监听托盘刷新事件
-    unlistenPromises.push(
-      listen('tray://refresh-current', () => {
-        console.log('[App] Tray refresh triggered, refreshing...');
-        fetchCurrentAccount();
-        fetchAccounts();
+      listen('tray://open-remote-terminal', () => {
+        useViewStore.getState().setMiniView(false);
+        void router.navigate('/remote-terminal');
       })
     );
 

@@ -40,7 +40,8 @@
     "create_success": "Başarıyla oluşturuldu",
     "update_success": "Başarıyla güncellendi",
     "delete_success": "Başarıyla silindi",
-    "copied": "Panoya kopyalandı"
+    "copied": "Panoya kopyalandı",
+    "copy_failed": "Panoya kopyalanamadı"
   },
   "nav": {
     "dashboard": "Kontrol Paneli",
@@ -74,7 +75,8 @@
     "switch_to_spanish_short": "ES",
     "switch_to_malay": "Malayca'ya Geç",
     "switch_to_malay_short": "MY",
-    "user_token": "Kullanıcı Tokenları"
+    "user_token": "Kullanıcı Tokenları",
+    "remote_terminal": "Uzak Terminal"
   },
   "dashboard": {
     "hello": "Merhaba, Kullanıcı 👋",
@@ -499,6 +501,13 @@
       "placeholder": "Küresel sistem talimatlarını buraya girin...\nÖrn: Sen React ve Rust konusunda uzman, deneyimli bir full-stack geliştiricisin. Türkçe cevap ver.",
       "char_count": "{{count}} karakter",
       "long_prompt_warning": "Talimatlar çok uzun (2000 karakterden fazla) ve çok fazla bağlam alanı tüketebilir."
+    },
+    "remote_terminal": {
+      "title": "Uzak Terminal (SSO)",
+      "gateway_url_label": "SSO Gateway Temel URL",
+      "gateway_url_placeholder": "https://sso.example.com",
+      "gateway_url_desc": "Uzak Terminal için oturum açma ve kısa ömürlü SSH sertifikası almak amacıyla kullanılan SSO ağ geçidi temel URL'si.",
+      "save": "Kaydet"
     }
   },
   "tray": {
@@ -578,7 +587,6 @@
       "zai": {
         "title": "z.ai (GLM) Sağlayıcısı",
         "title_tooltip": "Sadece Claude protokolü için isteğe bağlı Anthropic-uyumlu upstream. Yalnızca Anthropic endpoint'lerini etkiler; Google hesap yönlendirmesi değişmeden kalır.",
-        "subtitle": "Sadece Claude protokolü için isteğe bağlı Anthropic-uyumlu upstream.",
         "enabled": "Etkin",
         "enabled_tooltip": "Seçilen dağıtım moduna göre Anthropic istekleri için z.ai yönlendirmesini etkinleştirir.",
         "base_url": "Temel URL",
@@ -655,7 +663,6 @@
       "scheduling": {
         "title": "Hesap Rotasyonu ve Zamanlama",
         "title_tooltip": "Oturumların hesaplara nasıl bağlandığını ve oran limitlerinin nasıl işlendiğini kontrol eder.",
-        "subtitle": "Tüm protokoller (OpenAI/Gemini/Claude) için Prompt Önbelleğini ve oran limiti işlemeyi optimize eder.",
         "mode": "Zamanlama Modu",
         "mode_tooltip": "Cache-First: Oturumu hesaba bağla, oran limitinde bekle (önbellek kullanımını maksimize et); Balance: Oturumu bağla, oran limitinde hesap değiştir; Performance: Standart Round-robin.",
         "modes": {
@@ -701,7 +708,6 @@
       },
       "cloudflared": {
         "title": "Genel Erişim (Cloudflared)",
-        "subtitle": "Cloudflare Tunnel aracılığıyla yerel hizmetinizi internete açın",
         "not_installed": "Cloudflared yüklü değil",
         "install_hint": "Cloudflared, Cloudflare'in ücretsiz tünel aracıdır. Yerel proxy'nizi genel IP veya port yönlendirmesi olmadan internete açar. Yüklemek için aşağıdaki düğmeye tıklayın.",
         "install": "Şimdi Yükle",
@@ -799,7 +805,6 @@
     },
     "router": {
       "title": "Model Yönlendirici",
-      "subtitle": "Modelleri serilere göre yönlendirin veya özel tam eşlemeler ekleyin.\nNot: Yerel Claude geçiş modelleri (örn. claude-opus-4-6-thinking) varsayılan olarak seri gruplarını atlar. Geçersiz kılmak için \"Uzman Özel Yönlendirme\" kullanın.",
       "subtitle_simple": "Joker karakterlerle veya tam eşlemelerle model yönlendirmeyi özelleştirin",
       "background_task_title": "Arka Plan Görev Modeli",
       "background_task_desc": "Başlık oluşturma, özetleme vb. Claude CLI arka plan görevleri için kullanılan model (Varsayılan: gemini-2.5-flash)",
@@ -856,7 +861,6 @@
     },
     "multi_protocol": {
       "title": "Çoklu Protokol Desteği",
-      "subtitle": "Protokolleri ve anahtarları araçlarınızla senkronize edin",
       "description": "Proxy, kolay entegrasyon için OpenAI, Anthropic ve Gemini protokollerini destekler.",
       "openai_label": "OpenAI",
       "anthropic_label": "Anthropic",
@@ -870,7 +874,6 @@
     },
     "cli_sync": {
       "title": "CLI Senkronizasyonu",
-      "subtitle": "Mevcut API URL'sini ve anahtarını AI CLI araçlarınızla senkronize edin",
       "card_title": "{{name}} Yapılandırması",
       "status": {
         "not_installed": "Yüklü Değil",
@@ -1143,5 +1146,58 @@
     "placeholder_max_ips": "0 = Sınırsız",
     "hint_max_ips": "0 sınırsız demektir",
     "hint_curfew": "Devre dışı bırakmak için boş bırakın. Sunucu saatine göredir."
+  },
+  "remote_terminal": {
+    "login_button": "SSO ile Giriş Yap",
+    "login_button_loading": "SSO girişi bekleniyor...",
+    "connect_button": "Bağlan",
+    "disconnect_button": "Bağlantıyı Kes",
+    "principal_label": "Kullanıcı",
+    "host_label": "Sunucu",
+    "expires_label": "Son Geçerlilik",
+    "open_browser_hint": "Kurumsal SSO hesabınızla giriş yapmanız için bir tarayıcı penceresi açılacak.",
+    "gateway_not_configured": "SSO Gateway URL'si yapılandırılmamış. Lütfen Ayarlar'dan yapılandırın.",
+    "session_ended": "Uzak oturum sona erdi.",
+    "status": {
+      "idle": "Bağlı değil",
+      "waiting_sso": "Tarayıcıda SSO kimlik doğrulaması bekleniyor...",
+      "sso_success": "SSO kimlik doğrulaması başarılı",
+      "connecting": "SSH ile bağlanılıyor...",
+      "connected": "Bağlandı",
+      "disconnected": "Bağlantı kesildi",
+      "error": "Hata"
+    },
+    "toast": {
+      "login_failed": "SSO girişi başarısız",
+      "connect_failed": "Bağlantı başarısız",
+      "sync_failed": "Çalışma alanı senkronizasyonu başarısız",
+      "write_failed": "Terminale girdi gönderilemedi"
+    },
+    "local_dir_label": "Yerel çalışma dizini",
+    "local_dir_placeholder": "Klasör seçilmedi",
+    "choose_folder_button": "Klasör seç",
+    "sync_now_button": "Şimdi senkronize et",
+    "sync": {
+      "idle": "Henüz senkronize edilmedi",
+      "syncing": "Senkronize ediliyor...",
+      "synced_ago": "{{time}} önce senkronize edildi",
+      "failed": "Senkronizasyon başarısız",
+      "no_directory": "Önce yerel bir çalışma dizini seçin",
+      "pick_before_connect": "Bağlanmadan önce senkronize edilecek yerel çalışma dizinini seçin"
+    },
+    "add_folder_button": "Klasör ekle",
+    "close_folder_tooltip": "Klasör sekmesini kapat",
+    "confirm_close_folder": "Bu klasörde çalışan terminaller var. Kapatılsın ve hepsi durdurulsun mu?",
+    "empty_state_add_folder": "Uzak sunucuyla senkronize etmek ve bir terminal başlatmak için bir klasör ekleyin.",
+    "terminal_tab_label": "Terminal {{index}}",
+    "terminal_closed_badge": "kapatıldı",
+    "share_terminal_button": "Paylaş",
+    "share_terminal_tooltip": "Görüntülediğiniz terminal için paylaşım bağlantısını kopyala",
+    "close_terminal_tooltip": "Terminali kapat",
+    "no_terminals_yet": "Bu klasörde henüz terminal yok.",
+    "tool": {
+      "codex": "Codex",
+      "claude": "Claude Code"
+    }
   }
 }

@@ -4,7 +4,6 @@ use serde_json::json;
 use crate::models::QuotaData;
 use crate::modules::config;
 
-// Google endpoints - DNS will redirect to VNPAY when MITM is enabled
 const QUOTA_API_URL: &str = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 const CLOUD_CODE_BASE_URL: &str = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 
@@ -54,86 +53,8 @@ struct Tier {
     slug: Option<String>,
 }
 
-// ── DNS bypass via DNS-over-HTTPS ─────────────────────────────────────────────
-// Mirrors 9NICE server.js:
-//   const resolver = new dns.Resolver();
-//   resolver.setServers(["8.8.8.8"]);
-//   const ip = await resolve4(hostname);   // real IP, ignores /etc/hosts
-//   https.request({ hostname: ip, headers: { host: targetHost } })
-//
-// We query dns.google (DoH) over HTTPS to get the real IP, then pass it to
-// rquest::ClientBuilder::resolve() so the client connects to the real server
-// instead of the 127.0.0.1 in /etc/hosts.
-
-const BYPASS_HOSTS: &[&str] = &[
-    "cloudcode-pa.googleapis.com",
-    "daily-cloudcode-pa.googleapis.com",
-];
-
-/// Resolve hostname to its real IP via DNS-over-HTTPS (bypasses /etc/hosts).
-/// Uses dns.google which is NOT in the redirect list.
-async fn resolve_via_doh(host: &str) -> Option<std::net::IpAddr> {
-    let url = format!("https://dns.google/resolve?name={}&type=A", host);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .ok()?;
-    let json: serde_json::Value = client
-        .get(&url)
-        .header("accept", "application/dns-json")
-        .send()
-        .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
-    json["Answer"]
-        .as_array()?
-        .iter()
-        .find(|a| a["type"].as_i64() == Some(1))
-        .and_then(|a| a["data"].as_str())
-        .and_then(|s| s.parse().ok())
-}
-
-/// Build an rquest client with hardcoded IP overrides for Google quota hosts,
-/// so the client bypasses the /etc/hosts redirect and reaches the real servers.
-async fn build_bypass_dns_client(timeout_secs: u64) -> rquest::Client {
-    use rquest_util::Emulation;
-
-    let mut builder = rquest::Client::builder()
-        .emulation(Emulation::Chrome123)
-        .timeout(std::time::Duration::from_secs(timeout_secs));
-
-    for host in BYPASS_HOSTS {
-        if let Some(ip) = resolve_via_doh(host).await {
-            let addr = std::net::SocketAddr::new(ip, 443);
-            builder = builder.resolve(host, addr);
-            tracing::info!("[QUOTA-BYPASS] DNS override: {} → {}", host, ip);
-        } else {
-            tracing::warn!("[QUOTA-BYPASS] DoH resolve failed for {}, requests may be intercepted", host);
-        }
-    }
-
-    if let Ok(cfg) = crate::modules::config::load_app_config() {
-        let p = &cfg.proxy.upstream_proxy;
-        if p.enabled && !p.url.is_empty() {
-            if let Ok(proxy) = rquest::Proxy::all(&p.url) {
-                builder = builder.proxy(proxy);
-            }
-        }
-    }
-
-    builder.build().unwrap_or_else(|_| rquest::Client::new())
-}
-
 /// Get shared HTTP Client (15s timeout).
-/// When VNPAY /etc/hosts redirect is active, returns a bypass-DNS client so that
-/// outgoing quota requests are NOT caught by the redirect and reach the real Google server.
 async fn create_client(account_id: Option<&str>) -> rquest::Client {
-    if crate::modules::hosts_redirect::has_hosts_entries() {
-        tracing::info!("[QUOTA] VNPAY redirect active — resolving real IPs via DoH");
-        return build_bypass_dns_client(15).await;
-    }
     if let Some(pool) = crate::proxy::proxy_pool::get_global_proxy_pool() {
         pool.get_effective_client(account_id, 15).await
     } else {
@@ -144,9 +65,6 @@ async fn create_client(account_id: Option<&str>) -> rquest::Client {
 /// Get shared HTTP Client (60s timeout)
 #[allow(dead_code)] // 预留给预热/后台任务调用
 async fn create_warmup_client(account_id: Option<&str>) -> rquest::Client {
-    if crate::modules::hosts_redirect::has_hosts_entries() {
-        return build_bypass_dns_client(60).await;
-    }
     if let Some(pool) = crate::proxy::proxy_pool::get_global_proxy_pool() {
         pool.get_effective_client(account_id, 60).await
     } else {

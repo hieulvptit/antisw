@@ -41,7 +41,8 @@
     "create_success": "تم الإنشاء بنجاح",
     "update_success": "تم التحديث بنجاح",
     "delete_success": "تم الحذف بنجاح",
-    "copied": "تم النسخ إلى الحافظة"
+    "copied": "تم النسخ إلى الحافظة",
+    "copy_failed": "فشل النسخ إلى الحافظة"
   },
   "nav": {
     "dashboard": "الرئيسية",
@@ -75,7 +76,8 @@
     "switch_to_spanish_short": "ES",
     "switch_to_malay": "Switch to Malay",
     "switch_to_malay_short": "MY",
-    "user_token": "رموز المستخدم"
+    "user_token": "رموز المستخدم",
+    "remote_terminal": "الطرفية البعيدة"
   },
   "dashboard": {
     "hello": "مرحبًا، المستخدم 👋",
@@ -536,6 +538,13 @@
       "placeholder": "أدخل تعليمات النظام العالمية...\nمثال: أنت مهندس تطوير شامل رفيع المستوى، تتقن React و Rust. يرجى الرد باللغة العربية.",
       "char_count": "{{count}} حرف",
       "long_prompt_warning": "التعليمات طويلة (أكثر من 2000 حرف)، وقد تستهلك مساحة كبيرة من نافذة السياق."
+    },
+    "remote_terminal": {
+      "title": "الطرفية البعيدة (SSO)",
+      "gateway_url_label": "عنوان URL الأساسي لبوابة SSO",
+      "gateway_url_placeholder": "https://sso.example.com",
+      "gateway_url_desc": "عنوان URL الأساسي لبوابة SSO المستخدم لتسجيل الدخول والحصول على شهادة SSH قصيرة الأجل للطرفية البعيدة.",
+      "save": "حفظ"
     }
   },
   "tray": {
@@ -615,7 +624,6 @@
       "zai": {
         "title": "موفر z.ai (GLM)",
         "title_tooltip": "موفر اختياري متوافق مع Anthropic لبروتوكول Claude. يؤثر فقط على نقاط نهاية Anthropic؛ يبقى توجيه حساب Google دون تغيير.",
-        "subtitle": "موفر اختياري متوافق مع Anthropic لبروتوكول Claude فقط.",
         "enabled": "مفعل",
         "enabled_tooltip": "تفعيل توجيه z.ai لطلبات Anthropic وفقًا لوضع التوزيع المختار.",
         "base_url": "عنوان URL الأساسي",
@@ -690,7 +698,6 @@
       "scheduling": {
         "title": "تناوب الحسابات والجدولة",
         "title_tooltip": "يتحكم في كيفية ربط الجلسات بالحسابات وكيفية معالجة حدود المعدل.",
-        "subtitle": "يحسن التخزين المؤقت للموجه ومعالجة حدود المعدل لجميع البروتوكولات (OpenAI/Gemini/Claude).",
         "mode": "وضع الجدولة",
         "mode_tooltip": "التخزين المؤقت أولاً: ربط الجلسة بالحساب، الانتظار عند حد المعدل (تعظيم فائدة التخزين المؤقت)؛ التوازن: ربط الجلسة، تبديل الحساب عند حد المعدل؛ الأداء: تناوب قياسي.",
         "modes": {
@@ -732,7 +739,6 @@
     },
     "cloudflared": {
       "title": "الوصول العام (Cloudflared)",
-      "subtitle": "كشف الخدمة المحلية للإنترنت عبر نفق Cloudflare Tunnel",
       "not_installed": "Cloudflared غير مثبت",
       "install_hint": "Cloudflared هي أداة نفق مجانية من Cloudflare. تعرض وكيلك المحلي للإنترنت دون IP عام أو إعادة توجيه المنافذ. انقر فوق الزر أدناه للتثبيت.",
       "install": "تثبيت الآن",
@@ -828,7 +834,6 @@
     },
     "router": {
       "title": "موجه النماذج",
-      "subtitle": "توجيه النماذج حسب السلسلة أو إضافة تعيينات دقيقة مخصصة.\nملاحظة: نماذج Claude الأصلية الممرة (مثل claude-opus-4-6-thinking) تتخطى مجموعات السلسلة افتراضيًا. استخدم \"توجيه مخصص خبير\" للتجاوز.",
       "subtitle_simple": "تخصيص توجيه النماذج باستخدام أحرف البدل أو التعيينات الدقيقة",
       "background_task_title": "نموذج المهام الخلفية",
       "background_task_desc": "النموذج المستخدم لمهام الخلفية لـ Claude CLI مثل توليد العناوين، والملخص، وما إلى ذلك. (الافتراضي: gemini-2.5-flash)",
@@ -885,7 +890,6 @@
     },
     "multi_protocol": {
       "title": "دعم متعدد البروتوكولات",
-      "subtitle": "تكامل بسلاسة مع أدوات AI المفضلة لديك و CLIs",
       "description": "يدعم الوكيل المحلي بروتوكولات OpenAI، Anthropic، و Gemini، مما يضمن التوافق مع مجموعة واسعة من التطبيقات.",
       "openai_label": "بروتوكول OpenAI",
       "anthropic_label": "بروتوكول Anthropic",
@@ -906,7 +910,6 @@
     },
     "cli_sync": {
       "title": "مزامنة CLI بنقرة واحدة",
-      "subtitle": "مزامنة سريعة لنقاط نهاية API الحالية والمفاتيح لأدوات AI CLI المحلية الخاصة بك.",
       "card_title": "تكوين {{name}}",
       "status": {
         "not_installed": "لم يتم اكتشافه",
@@ -1182,5 +1185,58 @@
     "placeholder_max_ips": "0 = غير محدود",
     "hint_max_ips": "0 = غير محدود",
     "hint_curfew": "اتركه فارغًا لتعطيله. بناءً على وقت الخادم."
+  },
+  "remote_terminal": {
+    "login_button": "تسجيل الدخول عبر SSO",
+    "login_button_loading": "في انتظار تسجيل الدخول عبر SSO...",
+    "connect_button": "اتصال",
+    "disconnect_button": "قطع الاتصال",
+    "principal_label": "المستخدم",
+    "host_label": "المضيف",
+    "expires_label": "تنتهي الصلاحية في",
+    "open_browser_hint": "ستُفتح نافذة متصفح لتسجيل الدخول باستخدام حساب SSO الخاص بشركتك.",
+    "gateway_not_configured": "لم يتم تكوين عنوان URL لبوابة SSO. يرجى تكوينه في الإعدادات.",
+    "session_ended": "انتهت الجلسة البعيدة.",
+    "status": {
+      "idle": "غير متصل",
+      "waiting_sso": "في انتظار المصادقة عبر SSO في المتصفح...",
+      "sso_success": "تمت المصادقة عبر SSO بنجاح",
+      "connecting": "جارٍ الاتصال عبر SSH...",
+      "connected": "متصل",
+      "disconnected": "غير متصل",
+      "error": "خطأ"
+    },
+    "toast": {
+      "login_failed": "فشل تسجيل الدخول عبر SSO",
+      "connect_failed": "فشل الاتصال",
+      "sync_failed": "فشلت مزامنة مساحة العمل",
+      "write_failed": "فشل إرسال المدخلات إلى الطرفية"
+    },
+    "local_dir_label": "دليل العمل المحلي",
+    "local_dir_placeholder": "لم يتم اختيار مجلد",
+    "choose_folder_button": "اختر مجلدًا",
+    "sync_now_button": "مزامنة الآن",
+    "sync": {
+      "idle": "لم تتم المزامنة بعد",
+      "syncing": "جارٍ المزامنة...",
+      "synced_ago": "تمت المزامنة قبل {{time}}",
+      "failed": "فشلت المزامنة",
+      "no_directory": "يرجى اختيار دليل عمل محلي أولاً",
+      "pick_before_connect": "اختر دليل عمل محلي لمزامنته قبل الاتصال"
+    },
+    "add_folder_button": "إضافة مجلد",
+    "close_folder_tooltip": "إغلاق تبويب المجلد",
+    "confirm_close_folder": "يحتوي هذا المجلد على طرفيات قيد التشغيل. هل تريد الإغلاق وإيقافها جميعًا؟",
+    "empty_state_add_folder": "أضف مجلدًا لمزامنته مع الخادم البعيد وبدء طرفية.",
+    "terminal_tab_label": "طرفية {{index}}",
+    "terminal_closed_badge": "مغلقة",
+    "share_terminal_button": "مشاركة",
+    "share_terminal_tooltip": "انسخ رابط مشاركة للطرفية التي تشاهدها",
+    "close_terminal_tooltip": "إغلاق الطرفية",
+    "no_terminals_yet": "لا توجد طرفيات في هذا المجلد بعد.",
+    "tool": {
+      "codex": "Codex",
+      "claude": "Claude Code"
+    }
   }
 }

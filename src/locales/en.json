@@ -43,6 +43,7 @@
         "update_success": "Updated successfully",
         "delete_success": "Deleted successfully",
         "copied": "Copied to clipboard",
+        "copy_failed": "Failed to copy to clipboard",
         "retry": "Retry",
         "back": "Back",
         "reason": "Reason",
@@ -83,7 +84,8 @@
         "switch_to_malay": "Switch to Malay",
         "switch_to_malay_short": "MY",
         "user_token": "User Tokens",
-        "logout": "Logout"
+        "logout": "Logout",
+        "remote_terminal": "Remote Terminal"
     },
     "dashboard": {
         "hello": "Hello, User 👋",
@@ -613,6 +615,13 @@
         "branding": {
             "title": "Antigravity Switcher",
             "subtitle": "Professional Account Management"
+        },
+        "remote_terminal": {
+            "title": "Remote Terminal (SSO)",
+            "gateway_url_label": "SSO Gateway Base URL",
+            "gateway_url_placeholder": "https://sso.example.com",
+            "gateway_url_desc": "Base URL of the SSO gateway used to sign in and obtain a short-lived SSH certificate for the Remote Terminal screen.",
+            "save": "Save"
         }
     },
     "tray": {
@@ -695,7 +704,6 @@
             "zai": {
                 "title": "z.ai (GLM) Provider",
                 "title_tooltip": "Optional Anthropic-compatible upstream for Claude protocol. Only affects Anthropic endpoints; Google account routing remains unchanged.",
-                "subtitle": "Optional Anthropic-compatible upstream for Claude protocol only.",
                 "enabled": "Enabled",
                 "enabled_tooltip": "Enables z.ai routing for Anthropic requests according to the selected dispatch mode.",
                 "base_url": "Base URL",
@@ -770,7 +778,6 @@
             "scheduling": {
                 "title": "Account Rotation & Scheduling",
                 "title_tooltip": "Controls how sessions are bound to accounts and how rate limits are handled.",
-                "subtitle": "Optimizes Prompt Caching and rate limit handling for all protocols (OpenAI/Gemini/Claude).",
                 "mode": "Scheduling Mode",
                 "mode_tooltip": "Cache-First: Bind session to account, wait on rate limit (maximize cache utility); Balance: Bind session, switch account on rate limit; Performance: Standard Round-robin.",
                 "modes": {
@@ -866,7 +873,6 @@
         },
         "cloudflared": {
             "title": "Public Access (Cloudflared)",
-            "subtitle": "Expose your local service to the internet via Cloudflare Tunnel",
             "not_installed": "Cloudflared not installed",
             "install_hint": "Cloudflared is a free tunnel tool from Cloudflare. It exposes your local proxy to the internet without a public IP or port forwarding. Click the button below to install.",
             "install": "Install Now",
@@ -976,7 +982,6 @@
         },
         "router": {
             "title": "Model Router",
-            "subtitle": "Route models by series or add custom exact mappings.\nNote: Native Claude pass-through models (e.g. claude-sonnet-4-6-thinking, claude-opus-4-6-thinking) bypass series groups by default. Use \"Expert Custom Routing\" to override.",
             "subtitle_simple": "Customize model routing with wildcards or exact mappings",
             "background_task_title": "Background Task Model",
             "background_task_desc": "Model used for Claude CLI background tasks like title generation, summary, etc. (Default: gemini-2.5-flash)",
@@ -1062,7 +1067,6 @@
         },
         "multi_protocol": {
             "title": "Multi-Protocol Support",
-            "subtitle": "Seamlessly integrate with your favorite AI tools and CLIs",
             "description": "The local proxy supports OpenAI, Anthropic, and Gemini protocols, ensuring compatibility with a wide range of applications.",
             "openai_label": "OpenAI Protocol",
             "anthropic_label": "Anthropic Protocol",
@@ -1083,7 +1087,6 @@
         },
         "cli_sync": {
             "title": "One-click CLI Sync",
-            "subtitle": "Quickly sync current API endpoints and keys to your local AI CLI tools.",
             "card_title": "{{name}} Config",
             "status": {
                 "not_installed": "Not detected",
@@ -1391,5 +1394,62 @@
         "placeholder_max_ips": "0 = Unlimited",
         "hint_max_ips": "0 = Unlimited",
         "hint_curfew": "Leave empty to disable. Based on server time."
+    },
+    "remote_terminal": {
+        "login_button": "Sign in with SSO",
+        "login_button_loading": "Waiting for SSO login...",
+        "connect_button": "Connect",
+        "disconnect_button": "Disconnect",
+        "principal_label": "User",
+        "host_label": "Host",
+        "expires_label": "Expires at",
+        "open_browser_hint": "A browser window will open for you to sign in with your corporate SSO account.",
+        "gateway_not_configured": "SSO Gateway URL is not configured. Please set it in Settings.",
+        "session_ended": "The remote session has ended.",
+        "status": {
+            "idle": "Not connected",
+            "waiting_sso": "Waiting for SSO authentication in the browser...",
+            "sso_success": "SSO authentication successful",
+            "connecting": "Connecting via SSH...",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "error": "Error"
+        },
+        "toast": {
+            "login_failed": "SSO login failed",
+            "connect_failed": "Failed to connect",
+            "sync_failed": "Workspace sync failed",
+            "write_failed": "Failed to send input to the terminal"
+        },
+        "local_dir_label": "Local working directory",
+        "local_dir_placeholder": "No folder selected",
+        "choose_folder_button": "Choose folder",
+        "sync_now_button": "Sync now",
+        "sync": {
+            "idle": "Not synced yet",
+            "syncing": "Syncing...",
+            "synced_ago": "Synced {{time}} ago",
+            "failed": "Sync failed",
+            "no_directory": "Please choose a local working directory first",
+            "pick_before_connect": "Choose a local working directory to sync before connecting"
+        },
+        "add_folder_button": "Add folder",
+        "close_folder_tooltip": "Close folder tab",
+        "confirm_close_folder": "This folder has running terminals. Close it and stop all of them?",
+        "empty_state_add_folder": "Add a folder to sync it to the remote server and start a terminal.",
+        "terminal_tab_label": "Terminal {{index}}",
+        "terminal_closed_badge": "closed",
+        "share_terminal_button": "Share",
+        "share_terminal_tooltip": "Share the terminal with a link or QR code",
+        "share_qr_title": "Share Remote Terminal",
+        "share_qr_description": "Scan the QR code with your phone to open the terminal.",
+        "share_link_label": "Terminal share link",
+        "share_qr_copied": "The share link has been copied to the clipboard.",
+        "close_terminal_tooltip": "Close terminal",
+        "no_terminals_yet": "No terminals yet in this folder.",
+        "tool": {
+            "codex": "Codex",
+            "claude": "Claude Code"
+        }
     }
 }

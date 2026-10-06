@@ -41,7 +41,8 @@
     "create_success": "생성 성공",
     "update_success": "업데이트 성공",
     "delete_success": "삭제 성공",
-    "copied": "클립보드에 복사됨"
+    "copied": "클립보드에 복사됨",
+    "copy_failed": "클립보드 복사 실패"
   },
   "nav": {
     "dashboard": "대시보드",
@@ -76,7 +77,8 @@
     "switch_to_spanish_short": "ES",
     "switch_to_malay": "말레이어로 전환",
     "switch_to_malay_short": "MY",
-    "user_token": "사용자 토큰"
+    "user_token": "사용자 토큰",
+    "remote_terminal": "원격 터미널"
   },
   "dashboard": {
     "hello": "안녕하세요, 사용자님 👋",
@@ -537,6 +539,13 @@
       "placeholder": "전역 시스템 프롬프트를 입력하세요...\n예: 당신은 React와 Rust에 능숙한 시니어 풀스택 개발자입니다. 한국어로 답변해 주세요.",
       "char_count": "{{count}} 자",
       "long_prompt_warning": "프롬프트가 너무 깁니다 (2000자 초과). 컨텍스트 공간을 많이 차지할 수 있습니다."
+    },
+    "remote_terminal": {
+      "title": "원격 터미널 (SSO)",
+      "gateway_url_label": "SSO 게이트웨이 기본 URL",
+      "gateway_url_placeholder": "https://sso.example.com",
+      "gateway_url_desc": "원격 터미널 로그인 및 단기 SSH 인증서 발급에 사용되는 SSO 게이트웨이 기본 URL입니다.",
+      "save": "저장"
     }
   },
   "tray": {
@@ -616,7 +625,6 @@
       "zai": {
         "title": "z.ai (GLM) 공급자",
         "title_tooltip": "Claude 프로토콜을 위한 선택적 Anthropic 호환 업스트림입니다. Anthropic 엔드포인트에만 영향을 미치며 Google 계정 라우팅은 변경되지 않습니다.",
-        "subtitle": "Claude 프로토콜 전용 선택적 Anthropic 호환 업스트림.",
         "enabled": "활성화됨",
         "enabled_tooltip": "선택한 디스패치 모드에 따라 Anthropic 요청에 대해 z.ai 라우팅을 활성화합니다.",
         "base_url": "기본 URL",
@@ -691,7 +699,6 @@
       "scheduling": {
         "title": "계정 로테이션 및 스케줄링",
         "title_tooltip": "세션이 계정에 바인딩되는 방식과 속도 제한이 처리되는 방식을 제어합니다.",
-        "subtitle": "모든 프로토콜(OpenAI/Gemini/Claude)에 대한 프롬프트 캐싱 및 속도 제한 처리를 최적화합니다.",
         "mode": "스케줄링 모드",
         "mode_tooltip": "캐시 우선: 세션을 계정에 바인딩하고 속도 제한 시 대기 (캐시 활용 극대화); 균형: 세션을 바인딩하지만 속도 제한 시 계정 전환; 성능: 표준 라운드 로빈 로테이션.",
         "modes": {
@@ -735,7 +742,6 @@
     },
     "cloudflared": {
       "title": "공개 액세스 (Cloudflared)",
-      "subtitle": "Cloudflare 터널을 통해 로컬 서비스를 인터넷에 노출",
       "not_installed": "Cloudflared가 설치되지 않음",
       "install_hint": "Cloudflared는 Cloudflare의 무료 터널 도구입니다. 공용 IP나 포트 포워딩 없이 로컬 프록시를 인터넷에 노출합니다. 아래 버튼을 클릭하여 설치하세요.",
       "install": "지금 설치",
@@ -833,7 +839,6 @@
     },
     "router": {
       "title": "모델 라우터",
-      "subtitle": "시리즈별로 모델을 라우팅하거나 사용자 지정 정확한 매핑을 추가합니다.\n참고: 네이티브 Claude 패스스루 모델(예: claude-opus-4-6-thinking)은 기본적으로 시리즈 그룹을 우회합니다. 재정의하려면 \"전문가 사용자 지정 라우팅\"을 사용하세요.",
       "subtitle_simple": "와일드카드 또는 정확한 매핑으로 모델 라우팅 사용자 지정",
       "background_task_title": "백그라운드 작업 모델",
       "background_task_desc": "제목 생성, 요약 등 Claude CLI 백그라운드 작업에 사용되는 모델 (기본값: gemini-2.5-flash)",
@@ -915,7 +920,6 @@
     },
     "multi_protocol": {
       "title": "다중 프로토콜 지원",
-      "subtitle": "즐겨 사용하는 AI 도구 및 CLI와 원활하게 통합",
       "description": "로컬 프록시는 OpenAI, Anthropic 및 Gemini 프로토콜을 지원하여 광범위한 애플리케이션과의 호환성을 보장합니다.",
       "openai_label": "OpenAI 프로토콜",
       "anthropic_label": "Anthropic 프로토콜",
@@ -936,7 +940,6 @@
     },
     "cli_sync": {
       "title": "원클릭 CLI 동기화",
-      "subtitle": "현재 API 엔드포인트와 키를 로컬 AI CLI 도구에 빠르게 동기화합니다.",
       "card_title": "{{name}} 구성",
       "status": {
         "not_installed": "감지되지 않음",
@@ -1212,5 +1215,58 @@
     "placeholder_max_ips": "0 = 무제한",
     "hint_max_ips": "0 = 무제한",
     "hint_curfew": "비워두면 비활성화됩니다. 서버 시간 기준."
+  },
+  "remote_terminal": {
+    "login_button": "SSO 로그인",
+    "login_button_loading": "SSO 로그인을 기다리는 중...",
+    "connect_button": "연결",
+    "disconnect_button": "연결 해제",
+    "principal_label": "사용자",
+    "host_label": "호스트",
+    "expires_label": "만료 시각",
+    "open_browser_hint": "브라우저 창이 열리면 회사 SSO 계정으로 로그인하세요.",
+    "gateway_not_configured": "SSO 게이트웨이 URL이 설정되지 않았습니다. 설정에서 구성해주세요.",
+    "session_ended": "원격 세션이 종료되었습니다.",
+    "status": {
+      "idle": "연결되지 않음",
+      "waiting_sso": "브라우저에서 SSO 인증을 기다리는 중...",
+      "sso_success": "SSO 인증 성공",
+      "connecting": "SSH로 연결하는 중...",
+      "connected": "연결됨",
+      "disconnected": "연결 해제됨",
+      "error": "오류"
+    },
+    "toast": {
+      "login_failed": "SSO 로그인 실패",
+      "connect_failed": "연결 실패",
+      "sync_failed": "작업 공간 동기화 실패",
+      "write_failed": "터미널로 입력을 보내지 못했습니다"
+    },
+    "local_dir_label": "로컬 작업 디렉터리",
+    "local_dir_placeholder": "선택된 폴더 없음",
+    "choose_folder_button": "폴더 선택",
+    "sync_now_button": "지금 동기화",
+    "sync": {
+      "idle": "아직 동기화되지 않음",
+      "syncing": "동기화 중...",
+      "synced_ago": "{{time}} 전에 동기화됨",
+      "failed": "동기화 실패",
+      "no_directory": "먼저 로컬 작업 디렉터리를 선택하세요",
+      "pick_before_connect": "연결하기 전에 동기화할 로컬 작업 디렉터리를 선택하세요"
+    },
+    "add_folder_button": "폴더 추가",
+    "close_folder_tooltip": "폴더 탭 닫기",
+    "confirm_close_folder": "이 폴더에 실행 중인 터미널이 있습니다. 닫고 모두 중지하시겠습니까?",
+    "empty_state_add_folder": "폴더를 추가하여 원격 서버에 동기화하고 터미널을 시작하세요.",
+    "terminal_tab_label": "터미널 {{index}}",
+    "terminal_closed_badge": "닫힘",
+    "share_terminal_button": "공유",
+    "share_terminal_tooltip": "현재 보고 있는 터미널의 공유 링크 복사",
+    "close_terminal_tooltip": "터미널 닫기",
+    "no_terminals_yet": "이 폴더에는 아직 터미널이 없습니다.",
+    "tool": {
+      "codex": "Codex",
+      "claude": "Claude Code"
+    }
   }
 }

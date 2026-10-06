@@ -24,6 +24,9 @@ pub enum AppError {
     #[error("Account error: {0}")]
     Account(String),
 
+    #[error("Remote terminal error: {0}")]
+    RemoteTerminal(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }

@@ -40,7 +40,8 @@
     "create_success": "Berjaya dicipta",
     "update_success": "Berjaya dikemas kini",
     "delete_success": "Berjaya dipadam",
-    "copied": "Disalin ke papan klip"
+    "copied": "Disalin ke papan klip",
+    "copy_failed": "Gagal menyalin ke papan klip"
   },
   "nav": {
     "dashboard": "Papan Pemuka",
@@ -73,7 +74,8 @@
     "switch_to_spanish_short": "ES",
     "switch_to_malay": "Tukar ke Bahasa Melayu",
     "switch_to_malay_short": "MY",
-    "user_token": "Token Pengguna"
+    "user_token": "Token Pengguna",
+    "remote_terminal": "အဝေးထိန်း တာမင်နယ်"
   },
   "dashboard": {
     "hello": "Hai, Pengguna 👋",
@@ -534,6 +536,13 @@
       "placeholder": "ကမ္ဘာလုံးဆိုင်ရာ စနစ်ပရွမ်းကို ရိုက်ထည့်ပါ...\nဥပမာ- သင်သည် React နှင့် Rust ကျွမ်းကျင်သော စီနီယာ developer တစ်ဦးဖြစ်သည်။ မြန်မာဘာသာဖြင့် ဖြေဆိုပေးပါ။",
       "char_count": "{{count}} လုံး",
       "long_prompt_warning": "ပရွမ်းသည် ရှည်လွန်းနေသည် (စာလုံးရေ ၂၀၀၀ ထက်များနေသည်)၊ ၎င်းသည် စကားပြောဆိုမှုနယ်ပယ်ကို ပိုမိုနေရာယူနိုင်သည်။"
+    },
+    "remote_terminal": {
+      "title": "အဝေးထိန်း တာမင်နယ် (SSO)",
+      "gateway_url_label": "SSO Gateway အခြေခံ URL",
+      "gateway_url_placeholder": "https://sso.example.com",
+      "gateway_url_desc": "အဝေးထိန်းတာမင်နယ်အတွက် လော့ခ်အင်ဝင်ရန်နှင့် ခေတ္တသက်တမ်းရှိ SSH certificate ရယူရန်အသုံးပြုသည့် SSO gateway ၏ အခြေခံ URL။",
+      "save": "သိမ်းရန်"
     }
   },
   "tray": {
@@ -607,7 +616,6 @@
       "zai": {
         "title": "Pembekal z.ai (GLM)",
         "title_tooltip": "Upstream serasi Anthropic pilihan untuk protokol Claude. Hanya menjejaskan endpoint Anthropic; penghalaan akaun Google kekal tidak berubah.",
-        "subtitle": "Upstream serasi Anthropic pilihan untuk protokol Claude sahaja.",
         "enabled": "Diaktifkan",
         "enabled_tooltip": "Mengaktifkan penghalaan z.ai untuk permintaan Anthropic mengikut mod penghantaran yang dipilih.",
         "base_url": "URL Asas",
@@ -682,7 +690,6 @@
       "scheduling": {
         "title": "Putaran & Penjadualan Akaun",
         "title_tooltip": "Mengawal bagaimana sesi diikat kepada akaun dan bagaimana had kadar dikendalikan.",
-        "subtitle": "Mengoptimumkan Caching Prompt dan pengendalian had kadar untuk semua protokol (OpenAI/Gemini/Claude).",
         "mode": "Mod Penjadualan",
         "mode_tooltip": "Cache-First: Ikat sesi ke akaun, tunggu pada had kadar (maksimumkan utiliti cache); Balance: Ikat sesi, tukar akaun pada had kadar; Performance: Round-robin standard.",
         "modes": {
@@ -726,7 +733,6 @@
     },
     "cloudflared": {
       "title": "Akses Awam (Cloudflared)",
-      "subtitle": "Dedahkan perkhidmatan tempatan anda ke internet melalui Cloudflare Tunnel",
       "not_installed": "Cloudflared tidak dipasang",
       "install_hint": "Cloudflared adalah alat terowong percuma dari Cloudflare. Ia mendedahkan proksi tempatan anda ke internet tanpa IP awam atau penghalaan port. Klik butang di bawah untuk memasang.",
       "install": "Pasang Sekarang",
@@ -824,7 +830,6 @@
     },
     "router": {
       "title": "Penghalaan Model",
-      "subtitle": "Halakan model mengikut siri atau tambah pemetaan tepat tersuai.\nNota: Model pass-through Claude asli (cth. claude-opus-4-6-thinking) memintas kumpulan siri secara lalai. Gunakan \"Penghalaan Tersuai Pakar\" untuk mengatasi.",
       "subtitle_simple": "Sesuaikan penghalaan model dengan wildcard atau pemetaan tepat",
       "background_task_title": "Model Tugas Latar Belakang",
       "background_task_desc": "Model digunakan untuk tugas latar belakang Claude CLI seperti penjanaan tajuk, ringkasan, dll. (Lalai: gemini-2.5-flash)",
@@ -881,7 +886,6 @@
     },
     "multi_protocol": {
       "title": "Sokongan Pelbagai Protokol",
-      "subtitle": "Integrasi lancar dengan alat dan CLI AI kegemaran anda",
       "description": "Proksi tempatan menyokong protokol OpenAI, Anthropic, dan Gemini, memastikan keserasian dengan pelbagai aplikasi.",
       "openai_label": "Protokol OpenAI",
       "anthropic_label": "Protokol Anthropic",
@@ -902,7 +906,6 @@
     },
     "cli_sync": {
       "title": "Segerak CLI Satu-klik",
-      "subtitle": "Segerakkan endpoint API semasa dan kunci ke alat CLI AI tempatan anda dengan cepat.",
       "card_title": "Konfigurasi {{name}}",
       "status": {
         "not_installed": "Tidak dikesan",
@@ -1080,5 +1083,58 @@
     "placeholder_max_ips": "0 = Tanpa had",
     "hint_max_ips": "0 bermaksud tanpa had",
     "hint_curfew": "Biarkan kosong untuk nyahaktifkan. Berdasarkan masa pelayan."
+  },
+  "remote_terminal": {
+    "login_button": "SSO ဖြင့် လော့ခ်အင်ဝင်ရန်",
+    "login_button_loading": "SSO လော့ခ်အင်ကို စောင့်နေသည်...",
+    "connect_button": "ချိတ်ဆက်ရန်",
+    "disconnect_button": "ချိတ်ဆက်မှုဖြတ်ရန်",
+    "principal_label": "အသုံးပြုသူ",
+    "host_label": "ဟိုစ့်",
+    "expires_label": "သက်တမ်းကုန်ချိန်",
+    "open_browser_hint": "သင့်ကုမ္ပဏီ SSO အကောင့်ဖြင့် လော့ခ်အင်ဝင်ရန် browser ဝင်းဒိုးတစ်ခု ပွင့်လာပါမည်။",
+    "gateway_not_configured": "SSO Gateway URL ကို သတ်မှတ်မထားပါ။ Settings တွင် သတ်မှတ်ပေးပါ။",
+    "session_ended": "အဝေးထိန်း session ပြီးဆုံးသွားပါပြီ။",
+    "status": {
+      "idle": "မချိတ်ဆက်ရသေးပါ",
+      "waiting_sso": "Browser ထဲတွင် SSO အထောက်အထားစိစစ်မှုကို စောင့်နေသည်...",
+      "sso_success": "SSO အထောက်အထားစိစစ်မှု အောင်မြင်ပါသည်",
+      "connecting": "SSH ဖြင့် ချိတ်ဆက်နေသည်...",
+      "connected": "ချိတ်ဆက်ပြီး",
+      "disconnected": "ချိတ်ဆက်မှုဖြတ်ထားသည်",
+      "error": "အမှား"
+    },
+    "toast": {
+      "login_failed": "SSO လော့ခ်အင် မအောင်မြင်ပါ",
+      "connect_failed": "ချိတ်ဆက်မှု မအောင်မြင်ပါ",
+      "sync_failed": "Workspace Sync မအောင်မြင်ပါ",
+      "write_failed": "Terminal သို့ input ပို့၍ မရပါ"
+    },
+    "local_dir_label": "Local အလုပ်လုပ်ရန် Directory",
+    "local_dir_placeholder": "ဖိုလ်ဒါ မရွေးရသေးပါ",
+    "choose_folder_button": "ဖိုလ်ဒါရွေးရန်",
+    "sync_now_button": "ယခုပင် Sync လုပ်ရန်",
+    "sync": {
+      "idle": "မ Sync လုပ်ရသေးပါ",
+      "syncing": "Sync လုပ်နေသည်...",
+      "synced_ago": "{{time}} က Sync လုပ်ခဲ့သည်",
+      "failed": "Sync မအောင်မြင်ပါ",
+      "no_directory": "ကျေးဇူးပြု၍ Local Directory ကို အရင်ရွေးပါ",
+      "pick_before_connect": "ချိတ်ဆက်မီ Sync လုပ်ရန် Local Directory ကို ရွေးပါ"
+    },
+    "add_folder_button": "ဖိုလ်ဒါ ထည့်ရန်",
+    "close_folder_tooltip": "ဖိုလ်ဒါ tab ကိုပိတ်ရန်",
+    "confirm_close_folder": "ဤဖိုလ်ဒါတွင် လုပ်ဆောင်နေသော terminal များ ရှိနေသည်။ ပိတ်ပြီး အားလုံးရပ်တန့်လိုပါသလား?",
+    "empty_state_add_folder": "ဖိုလ်ဒါတစ်ခုထည့်ပြီး remote server သို့ sync လုပ်ကာ terminal တစ်ခု စတင်ပါ။",
+    "terminal_tab_label": "Terminal {{index}}",
+    "terminal_closed_badge": "ပိတ်ပြီး",
+    "share_terminal_button": "မျှဝေရန်",
+    "share_terminal_tooltip": "ကြည့်နေသော terminal အတွက် share link ကို ကူးယူပါ",
+    "close_terminal_tooltip": "Terminal ကိုပိတ်ရန်",
+    "no_terminals_yet": "ဤဖိုလ်ဒါတွင် Terminal မရှိသေးပါ။",
+    "tool": {
+      "codex": "Codex",
+      "claude": "Claude Code"
+    }
   }
 }

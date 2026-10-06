@@ -25,7 +25,6 @@ pub mod session_manager; // 会话指纹管理
 pub mod signature_cache; // Signature Cache (v3.3.16)
 pub mod sticky_config; // 粘性调度配置
 pub mod upstream; // 上游客户端
-pub mod vnpay_mitm; // VNPAY Transparent MITM Proxy
 pub mod zai_vision_mcp; // Built-in Vision MCP server state
 pub mod zai_vision_tools; // Built-in Vision MCP tools (z.ai vision API) // 调试日志
 

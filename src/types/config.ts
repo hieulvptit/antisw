@@ -146,7 +146,6 @@ export interface AppConfig {
     update_check_interval?: number; // 更新检查间隔（小时）
     accounts_page_size?: number; // 账号列表每页显示数量,默认 0 表示自动计算
     hidden_menu_items?: string[]; // 隐藏的菜单项路径列表
-    antigravity_vnpay_enabled?: boolean; // [NEW] Antigravity VNPAY mode - redirect Google API to VNPAY
     scheduled_warmup: ScheduledWarmupConfig;
     quota_protection: QuotaProtectionConfig; // [NEW] 配额保护配置
     pinned_quota_models: PinnedQuotaModelsConfig; // [NEW] 配额关注列表

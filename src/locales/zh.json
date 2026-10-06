@@ -42,6 +42,7 @@
         "update_success": "更新成功",
         "delete_success": "删除成功",
         "copied": "已复制到剪贴板",
+        "copy_failed": "复制失败",
         "reason": "原因",
         "show_raw": "显示原始报文",
         "show_parsed": "显示解析后"
@@ -80,7 +81,8 @@
         "switch_to_malay": "切换到马来语",
         "switch_to_malay_short": "MY",
         "user_token": "用户 Token",
-        "logout": "登出"
+        "logout": "登出",
+        "remote_terminal": "远程终端"
     },
     "dashboard": {
         "hello": "你好, 用户 👋",
@@ -604,6 +606,13 @@
             "placeholder": "输入全局系统提示词...\n例如：你是一位资深的全栈开发工程师，擅长 React 和 Rust。请使用简体中文回复。",
             "char_count": "{{count}} 字符",
             "long_prompt_warning": "提示词较长（超过 2000 字符），可能会占用较多的上下文窗口空间。"
+        },
+        "remote_terminal": {
+            "title": "远程终端 (SSO)",
+            "gateway_url_label": "SSO 网关地址",
+            "gateway_url_placeholder": "https://sso.example.com",
+            "gateway_url_desc": "用于登录并获取远程终端短期 SSH 证书的 SSO 网关基础地址。",
+            "save": "保存"
         }
     },
     "tray": {
@@ -683,7 +692,6 @@
             "zai": {
                 "title": "z.ai（GLM）提供商",
                 "title_tooltip": "为 Claude 协议提供可选的 Anthropic 兼容上游（z.ai）。只影响 Claude 协议请求，Google 账号池仍按原逻辑工作。",
-                "subtitle": "可选的 Anthropic 兼容上游，仅用于 Claude 协议请求。",
                 "enabled": "已启用",
                 "enabled_tooltip": "启用后，Claude 协议请求将按“分发模式”路由到 z.ai。",
                 "base_url": "Base URL",
@@ -758,7 +766,6 @@
             "scheduling": {
                 "title": "账号轮换与会话调度",
                 "title_tooltip": "控制会话如何绑定到账号，以及触发限流时的行为。",
-                "subtitle": "针对全协议客户端优化 Prompt Caching 和限流处理 (OpenAI/Gemini/Claude)。",
                 "mode": "调度模式",
                 "mode_tooltip": "缓存优先：绑定账号，限流时强制等待（最大化缓存）；平衡：绑定账号，限流时自动热切；性能优先：不绑定，全自动轮换。",
                 "modes": {
@@ -854,7 +861,6 @@
         },
         "cloudflared": {
             "title": "公网访问 (Cloudflared)",
-            "subtitle": "通过 Cloudflare 隧道将本地服务暴露到公网",
             "not_installed": "Cloudflared 未安装",
             "install_hint": "Cloudflared 是 Cloudflare 提供的免费隧道工具,可将本地反代服务暴露到公网,无需公网IP或端口映射。点击下方按钮一键下载安装。",
             "install": "一键安装",
@@ -961,7 +967,6 @@
         },
         "router": {
             "title": "模型路由中心 (Model Router)",
-            "subtitle": "按“规格家族”统一路由 OpenAI/Claude 模型，或添加最高优先级的“精确映射”。\n注意：Claude 原生直通模型（claude-sonnet-4-6-thinking, claude-opus-4-6-thinking 等）默认透传，需在“专家精确映射”中添加规则才能修改。",
             "subtitle_simple": "通过通配符或精确映射自定义模型路由规则",
             "background_task_title": "后台任务模型",
             "background_task_desc": "用于 Claude CLI 的标题生成、摘要提取等后台自动化任务 (默认: gemini-2.5-flash)",
@@ -1050,7 +1055,6 @@
         },
         "multi_protocol": {
             "title": "多协议支持 (Multi-Protocol Support)",
-            "subtitle": "快速同步 API 地址与密钥到本地 AI 工具",
             "description": "反代服务支持 OpenAI、Anthropic 和 Gemini 协议，满足不同工具的集成需求",
             "openai_label": "OpenAI 协议",
             "anthropic_label": "Anthropic 协议",
@@ -1071,7 +1075,6 @@
         },
         "cli_sync": {
             "title": "CLI 配置一键同步",
-            "subtitle": "快速将当前 API 服务地址与 API 密钥同步到本地 AI CLI 工具中",
             "card_title": "{{name}} 配置",
             "status": {
                 "not_installed": "未检测到安装",
@@ -1351,5 +1354,58 @@
         "placeholder_max_ips": "0 = 不限制",
         "hint_max_ips": "0 表示不限制",
         "hint_curfew": "留空则禁用。基于服务器时间。"
+    },
+    "remote_terminal": {
+        "login_button": "SSO 登录",
+        "login_button_loading": "正在等待 SSO 登录...",
+        "connect_button": "连接",
+        "disconnect_button": "断开连接",
+        "principal_label": "用户",
+        "host_label": "主机",
+        "expires_label": "过期时间",
+        "open_browser_hint": "将打开浏览器窗口，请使用企业 SSO 账号登录。",
+        "gateway_not_configured": "尚未配置 SSO 网关地址，请先在设置中配置。",
+        "session_ended": "远程会话已结束。",
+        "status": {
+            "idle": "未连接",
+            "waiting_sso": "正在浏览器中等待 SSO 认证...",
+            "sso_success": "SSO 认证成功",
+            "connecting": "正在通过 SSH 连接...",
+            "connected": "已连接",
+            "disconnected": "已断开",
+            "error": "错误"
+        },
+        "toast": {
+            "login_failed": "SSO 登录失败",
+            "connect_failed": "连接失败",
+            "sync_failed": "工作区同步失败",
+            "write_failed": "无法向终端发送输入"
+        },
+        "local_dir_label": "本地工作目录",
+        "local_dir_placeholder": "尚未选择文件夹",
+        "choose_folder_button": "选择文件夹",
+        "sync_now_button": "立即同步",
+        "sync": {
+            "idle": "尚未同步",
+            "syncing": "正在同步...",
+            "synced_ago": "{{time}}前已同步",
+            "failed": "同步失败",
+            "no_directory": "请先选择本地工作目录",
+            "pick_before_connect": "请选择本地工作目录，以便在连接前进行同步"
+        },
+        "add_folder_button": "添加文件夹",
+        "close_folder_tooltip": "关闭文件夹标签",
+        "confirm_close_folder": "该文件夹中有正在运行的终端，确定关闭并停止全部吗？",
+        "empty_state_add_folder": "添加一个文件夹以同步到远程服务器并开始一个终端会话。",
+        "terminal_tab_label": "终端 {{index}}",
+        "terminal_closed_badge": "已关闭",
+        "share_terminal_button": "分享",
+        "share_terminal_tooltip": "复制当前查看终端的分享链接",
+        "close_terminal_tooltip": "关闭终端",
+        "no_terminals_yet": "此文件夹中还没有终端。",
+        "tool": {
+            "codex": "Codex",
+            "claude": "Claude Code"
+        }
     }
 }

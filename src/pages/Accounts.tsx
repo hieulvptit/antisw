@@ -11,7 +11,6 @@ import {
   Trash2,
   Upload,
   Users,
-  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import AccountDetailsDialog from "../components/accounts/AccountDetailsDialog";
@@ -22,7 +21,6 @@ import DeviceFingerprintDialog from "../components/accounts/DeviceFingerprintDia
 import ModalDialog from "../components/common/ModalDialog";
 import Pagination from "../components/common/Pagination";
 import AccountErrorDialog from "../components/accounts/AccountErrorDialog";
-import { SudoPasswordDialog } from "../components/common/SudoPasswordDialog";
 import { showToast } from "../components/common/ToastContainer";
 
 import { useAccountStore } from "../stores/useAccountStore";
@@ -64,7 +62,7 @@ function Accounts() {
     const saved = localStorage.getItem('accounts_view_mode');
     return (saved === 'list' || saved === 'grid') ? saved : 'list';
   });
-  const pendingSsoAction = useRef<'antigravity' | 'cli-vnpay' | null>(null);
+  const pendingSsoAction = useRef<'cli-vnpay' | null>(null);
 
   // Save view mode preference
   useEffect(() => {
@@ -83,30 +81,6 @@ function Accounts() {
   const [errorAccountId, setErrorAccountId] = useState<string | null>(null);
   const [cliVnpayInstalled, setCliVnpayInstalled] = useState(false);
   const [cliVnpayBusy, setCliVnpayBusy] = useState(false);
-  const [antigravityBusy, setAntigravityBusy] = useState(false);
-  const [mitmRunning, setMitmRunning] = useState(false);
-  const [mitmBusy, setMitmBusy] = useState(false);
-  const [sudoPasswordDialog, setSudoPasswordDialog] = useState<{
-    open: boolean;
-    action: 'start' | 'stop';
-    isLoading: boolean;
-  }>({ open: false, action: 'start', isLoading: false });
-
-  // 9NICE MITM status refresh (process + hosts file)
-  const refreshMitmStatus = async () => {
-    if (!isTauri()) return;
-    try {
-      const [status, hostsActive] = await Promise.all([
-        invoke<{ running: boolean; pid: number | null }>('nine_router_mitm_status'),
-        invoke<boolean>('nine_router_mitm_hosts_active'),
-      ]);
-      const active = status.running || hostsActive;
-      console.log('[9NICE-MITM] refreshMitmStatus: process_running=', status.running, 'hosts_active=', hostsActive, 'final_active=', active);
-      setMitmRunning(active);
-    } catch (e) {
-      console.warn('nine_router_mitm_status failed', e);
-    }
-  };
 
 
   const handleUpdateLabel = async (accountId: string, label: string) => {
@@ -221,116 +195,6 @@ function Accounts() {
     }
   };
 
-  // Antigravity: Toggle MITM (start/stop) or trigger VNPAY auth when stopped
-  const handleAntigravityAuth = async () => {
-    if (antigravityBusy || mitmBusy) return;
-
-    // If MITM is running, stop it (remove DNS + stop server)
-    if (mitmRunning) {
-      // Show password dialog for stop action
-      setSudoPasswordDialog({ open: true, action: 'stop', isLoading: false });
-      return;
-    }
-
-    // MITM not running - need SSO auth first before DNS/hosts setup
-    setAntigravityBusy(true);
-    pendingSsoAction.current = 'antigravity';
-
-    try {
-      if (!isTauri()) {
-        showToast('Antigravity chỉ khả dụng ở chế độ Desktop', 'error');
-        setAntigravityBusy(false);
-        pendingSsoAction.current = null;
-        return;
-      }
-      const port = await invoke<number>('prepare_vnpay_jwt_listener', { action: 'antigravity' });
-      const authUrl = `https://genai.vnpay.vn/create-jwt-token?anti=on&connectid=${encodeURIComponent(String(port))}`;
-      const { openUrl } = await import('@tauri-apps/plugin-opener');
-      await openUrl(authUrl);
-      showToast('Đang chờ xác thực VNPAY SSO...', 'info');
-    } catch (error) {
-      console.error('Antigravity SSO failed:', error);
-      showToast(`Xác thực VNPAY lỗi: ${error}`, 'error');
-      setAntigravityBusy(false);
-      pendingSsoAction.current = null;
-    }
-  };
-
-  // Execute Antigravity start with password
-  const executeAntigravityStart = async (password: string) => {
-    setSudoPasswordDialog(prev => ({ ...prev, isLoading: true }));
-    setAntigravityBusy(true);
-    try {
-      if (!isTauri()) {
-        showToast('Antigravity chỉ khả dụng ở chế độ Desktop', 'error');
-        setSudoPasswordDialog({ open: false, action: 'start', isLoading: false });
-        return;
-      }
-      const status = await invoke<{ running: boolean; pid: number | null }>(
-        'nine_router_mitm_start',
-        { apiKey: '', enableDns: true, sudoPassword: password }
-      );
-      setMitmRunning(status.running);
-      setSudoPasswordDialog({ open: false, action: 'start', isLoading: false });
-      showToast(
-        status.pid
-          ? `Antigravity đã bật (PID ${status.pid}) - DNS redirect active`
-          : 'Antigravity đã bật - DNS redirect active',
-        'success'
-      );
-    } catch (error) {
-      console.error('Antigravity start failed:', error);
-      setSudoPasswordDialog({ open: false, action: 'start', isLoading: false });
-      showToast(`Antigravity lỗi: ${error}`, 'error');
-    } finally {
-      setAntigravityBusy(false);
-    }
-  };
-
-  // Execute Antigravity stop with password
-  const executeAntigravityStop = async (password: string) => {
-    setSudoPasswordDialog(prev => ({ ...prev, isLoading: true }));
-    setMitmBusy(true);
-    try {
-      await invoke('nine_router_mitm_stop', { removeDns: true, sudoPassword: password });
-
-      // Check if hosts entries were actually removed
-      const hostsActive = await invoke<boolean>('nine_router_mitm_hosts_active');
-      if (hostsActive) {
-        // Cleanup failed, hosts entries still present
-        setSudoPasswordDialog({ open: false, action: 'stop', isLoading: false });
-        showToast('Antigravity lỗi: Không xoá được cấu hình hosts. Kiểm tra mật khẩu sudo.', 'error');
-      } else {
-        // Cleanup successful
-        setMitmRunning(false);
-        setSudoPasswordDialog({ open: false, action: 'stop', isLoading: false });
-        showToast('Antigravity đã tắt - DNS đã khôi phục', 'success');
-      }
-    } catch (error) {
-      console.error('Antigravity stop failed:', error);
-      setSudoPasswordDialog({ open: false, action: 'stop', isLoading: false });
-      showToast(`Antigravity lỗi: ${error}`, 'error');
-    } finally {
-      setMitmBusy(false);
-    }
-  };
-
-  // Handle password dialog confirm
-  const handleSudoPasswordConfirm = (password: string) => {
-    if (sudoPasswordDialog.action === 'start') {
-      executeAntigravityStart(password);
-    } else {
-      executeAntigravityStop(password);
-    }
-  };
-
-  // Handle password dialog cancel
-  const handleSudoPasswordCancel = () => {
-    setSudoPasswordDialog({ open: false, action: sudoPasswordDialog.action, isLoading: false });
-    setAntigravityBusy(false);
-    setMitmBusy(false);
-  };
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -415,7 +279,6 @@ function Accounts() {
     if (!isTauri()) return;
 
     refreshCliVnpayStatus();
-    refreshMitmStatus();
     // invoke<boolean>('ensure_otel_telemetry_env')
     //   .then((added) => {
     //     if (added) {
@@ -431,8 +294,6 @@ function Accounts() {
         console.log('[Accounts] SSO timeout - resetting busy state for:', action);
         if (action === 'cli-vnpay') {
           setCliVnpayBusy(false);
-        } else if (action === 'antigravity') {
-          setAntigravityBusy(false);
         }
       }
     }, 10000); // 3 minutes timeout
@@ -468,23 +329,10 @@ function Accounts() {
           setCliVnpayBusy(false);
           refreshCliVnpayStatus();
 
-        } else if (action === 'antigravity') {
-          // ── Logic của nút Antigravity ───────────────────────────
-          showToast('Đã xác thực VNPAY SSO, đang bật Antigravity...', 'info');
-          // Enable VNPAY mode in config - redirect API to VNPAY (free local model)
-          invoke('enable_antigravity_vnpay_mode', { enabled: true })
-            .then(() => showToast('VNPAY Mode đã bật', 'success'))
-            .catch((e) => console.warn('enable_antigravity_vnpay_mode failed', e));
-
-          // Now show password dialog to start MITM/DNS
-          setAntigravityBusy(false);
-          setSudoPasswordDialog({ open: true, action: 'start', isLoading: false });
-
         } else {
           // Fallback nếu không rõ nguồn
           console.warn('[Accounts] vnpay-cli-jwt-installed fired with unknown action:', action);
           setCliVnpayBusy(false);
-          setAntigravityBusy(false);
         }
       });
 
@@ -1122,25 +970,6 @@ function Accounts() {
             </span>
           </button>
 
-          {/* Antigravity MITM Toggle - single button that changes color/text */}
-          <button
-            className={cn(
-              "px-2.5 py-2 text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-sm",
-              mitmRunning
-                ? "bg-rose-600 hover:bg-rose-700"
-                : "bg-emerald-600 hover:bg-emerald-700",
-              (antigravityBusy || mitmBusy) && "opacity-70 cursor-not-allowed",
-            )}
-            onClick={handleAntigravityAuth}
-            disabled={antigravityBusy || mitmBusy}
-            title={mitmRunning ? "Gỡ Antigravity DNS" : "Bật Antigravity DNS"}
-          >
-            <Zap className={cn("w-3.5 h-3.5 shrink-0", (antigravityBusy || mitmBusy) && "animate-pulse")} />
-            <span className="hidden lg:inline">
-              {mitmRunning ? "Undo AG" : "On Antigravity"}
-            </span>
-          </button>
-
           <button
             className="px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-sm"
             onClick={async () => {
@@ -1415,23 +1244,6 @@ function Accounts() {
       <AccountErrorDialog
         account={accounts.find(a => a.id === errorAccountId) || null}
         onClose={() => setErrorAccountId(null)}
-      />
-      {/* Sudo Password Dialog */}
-      <SudoPasswordDialog
-        isOpen={sudoPasswordDialog.open}
-        onConfirm={handleSudoPasswordConfirm}
-        onCancel={handleSudoPasswordCancel}
-        title={
-          sudoPasswordDialog.action === 'start'
-            ? 'Bật Antigravity'
-            : 'Tắt Antigravity'
-        }
-        message={
-          sudoPasswordDialog.action === 'start'
-            ? 'Nhập mật khẩu sudo để cập nhật hosts file và cài certificate.'
-            : 'Nhập mật khẩu sudo để khôi phục hosts file.'
-        }
-        isLoading={sudoPasswordDialog.isLoading}
       />
     </div>
   );

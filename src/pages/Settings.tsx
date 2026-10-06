@@ -5,7 +5,7 @@ function Settings() {
 
     return (
         <div className="h-full w-full overflow-y-auto">
-            <div className="p-5 max-w-7xl mx-auto">
+            <div className="p-5 max-w-7xl mx-auto space-y-5">
                 <div className="bg-white dark:bg-base-100 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-base-200">
                     <div className="flex flex-col h-full animate-in fade-in duration-500">
                         <div className="flex-1 flex flex-col justify-center items-center space-y-8">

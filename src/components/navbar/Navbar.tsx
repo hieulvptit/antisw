@@ -1,4 +1,4 @@
-import { Users, Settings } from 'lucide-react';
+import { Users, Settings, SquareTerminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '../../stores/useConfigStore';
 import { isTauri, isLinux } from '../../utils/env';
@@ -19,7 +19,8 @@ function Navbar() {
 
     // 创建导航项(包含翻译后的标签)
     const navItems: NavItem[] = [
-        { path: '/', label: t('nav.accounts'), icon: Users, priority: 'high' },
+        { path: '/remote-terminal', label: t('nav.remote_terminal'), icon: SquareTerminal, priority: 'high' },
+        { path: '/accounts', label: t('nav.accounts'), icon: Users, priority: 'medium' },
         { path: '/settings', label: t('settings.tabs.about'), icon: Settings, priority: 'high' },
     ];
 

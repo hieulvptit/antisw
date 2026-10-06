@@ -17,8 +17,8 @@ pub mod proxy_pool;
 pub mod tracking;
 // 导出 user_token 命令
 pub mod user_token;
-// 导出 9NICE MITM 命令
-pub mod nine_router_mitm;
+// 导出 Remote Terminal 命令 (SSO -> codex CLI)
+pub mod remote_terminal;
 
 /// 列出所有账号
 #[tauri::command]
@@ -821,99 +821,6 @@ pub async fn get_antigravity_args() -> Result<Vec<String>, String> {
         Some(args) => Ok(args),
         None => Err("未找到正在运行的 Antigravity 进程".to_string()),
     }
-}
-
-/// 启用 Antigravity VNPAY Mode (DNS redirect + MITM proxy)
-/// Khi Antigravity xác thực VNPAY thành công, bật flag này để redirect DNS sang VNPAY
-/// `sudo_password` — sudo password để ghi /etc/hosts (pipe qua stdin, không hiện popup tương tác)
-#[tauri::command]
-pub async fn enable_antigravity_vnpay_mode(
-    enabled: bool,
-    sudo_password: Option<String>,
-    redirect_ip: Option<String>,
-) -> Result<(), String> {
-    let mut config = modules::load_app_config()?;
-    let old_value = config.antigravity_vnpay_enabled;
-    config.antigravity_vnpay_enabled = enabled;
-    modules::save_app_config(&config)?;
-
-    if enabled {
-        tracing::info!("[VNPAY-MITM] Enabling Antigravity VNPAY mode");
-
-        let target_ip = redirect_ip
-            .unwrap_or_else(|| "127.0.0.1".to_string());
-
-        match crate::modules::hosts_redirect::add_hosts_entries(
-            &target_ip,
-            sudo_password.as_deref(),
-        ) {
-            Ok(_) => {
-                tracing::info!(
-                    "[VNPAY-MITM] Hosts file updated - {} → {}",
-                    target_ip,
-                    REDIRECT_DOMAINS.join(", ")
-                );
-            }
-            Err(e) => {
-                tracing::warn!("[VNPAY-MITM] Failed to update hosts file: {}. Try running as admin.", e);
-                // Vẫn tiếp tục — có thể đã chạy với quyền admin rồi
-            }
-        }
-
-        crate::proxy::update_vnpay_dns_redirect_config(crate::proxy::VnpayDnsRedirectConfig {
-            enabled: true,
-            source_host: "daily-cloudcode-pa.googleapis.com".to_string(),
-            target_host: "genai.vnpay.vn".to_string(),
-            target_path_prefix: "/aicoding".to_string(),
-        });
-    } else {
-        tracing::info!("[VNPAY-MITM] Disabling Antigravity VNPAY mode");
-
-        match crate::modules::hosts_redirect::remove_hosts_entries(sudo_password.as_deref()) {
-            Ok(_) => {
-                tracing::info!("[VNPAY-MITM] Hosts file restored - traffic back to Google");
-            }
-            Err(e) => {
-                tracing::warn!("[VNPAY-MITM] Failed to restore hosts file: {}", e);
-            }
-        }
-
-        crate::proxy::update_vnpay_dns_redirect_config(crate::proxy::VnpayDnsRedirectConfig {
-            enabled: false,
-            source_host: "daily-cloudcode-pa.googleapis.com".to_string(),
-            target_host: "genai.vnpay.vn".to_string(),
-            target_path_prefix: "/aicoding".to_string(),
-        });
-    }
-
-    tracing::info!(
-        "[VNPAY-MITM] Antigravity VNPAY mode changed: {} -> {}",
-        old_value,
-        enabled
-    );
-    Ok(())
-}
-
-/// Danh sách các domain bị redirect
-const REDIRECT_DOMAINS: [&str; 2] = [
-    "daily-cloudcode-pa.googleapis.com",
-    "cloudcode-pa.googleapis.com"
-];
-
-/// Get VNPAY MITM status
-#[tauri::command]
-pub fn get_vnpay_mitm_status() -> (bool, Vec<String>) {
-    let config = modules::load_app_config().unwrap_or_default();
-    let hosts_active = crate::modules::hosts_redirect::has_hosts_entries();
-    let domains = if hosts_active {
-        vec![
-            "daily-cloudcode-pa.googleapis.com".to_string(),
-            "cloudcode-pa.googleapis.com".to_string()
-        ]
-    } else {
-        vec![]
-    };
-    (config.antigravity_vnpay_enabled || hosts_active, domains)
 }
 
 /// 检测更新响应结构

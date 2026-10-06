@@ -43,6 +43,7 @@
     "update_success": "更新成功",
     "delete_success": "削除成功",
     "copied": "クリップボードにコピーしました",
+    "copy_failed": "クリップボードへのコピーに失敗しました",
     "retry": "再試行",
     "back": "戻る"
   },
@@ -80,7 +81,8 @@
     "switch_to_malay": "マレー語に切り替え",
     "switch_to_malay_short": "MY",
     "user_token": "ユーザートークン",
-    "logout": "ログアウト"
+    "logout": "ログアウト",
+    "remote_terminal": "リモートターミナル"
   },
   "dashboard": {
     "hello": "こんにちは 👋",
@@ -562,6 +564,13 @@
     "branding": {
       "title": "AntiSwitcher",
       "subtitle": "プロフェッショナルなアカウント管理"
+    },
+    "remote_terminal": {
+      "title": "リモートターミナル (SSO)",
+      "gateway_url_label": "SSO ゲートウェイ ベース URL",
+      "gateway_url_placeholder": "https://sso.example.com",
+      "gateway_url_desc": "リモートターミナルのサインインと短命 SSH 証明書の取得に使用する SSO ゲートウェイのベース URL。",
+      "save": "保存"
     }
   },
   "tray": {
@@ -644,7 +653,6 @@
       "zai": {
         "title": "z.ai (GLM) プロバイダー",
         "title_tooltip": "Claudeプロトコル用のオプションのAnthropic互換アップストリーム。Anthropicエンドポイントにのみ影響し、Googleアカウントのルーティングは変更されません。",
-        "subtitle": "Claudeプロトコル専用のオプションのAnthropic互換アップストリーム。",
         "enabled": "有効",
         "enabled_tooltip": "選択したディスパッチモードに従って、Anthropicリクエストのz.aiルーティングを有効にします。",
         "base_url": "ベースURL",
@@ -721,7 +729,6 @@
       "scheduling": {
         "title": "アカウントローテーションとスケジューリング",
         "title_tooltip": "セッションをアカウントにバインドする方法と、レート制限の処理方法を制御します。",
-        "subtitle": "すべてのプロトコル (OpenAI/Gemini/Claude) のプロンプトキャッシュとレート制限処理を最適化します。",
         "mode": "スケジューリングモード",
         "mode_tooltip": "キャッシュ優先: セッションをアカウントに固定し、レート制限時は待機 (キャッシュ効率最大); バランス: セッションを固定しつつレート制限時は切り替え; パフォーマンス: 標準的なラウンドロビン。",
         "modes": {
@@ -836,7 +843,6 @@
       "local_port": "ローカルポート",
       "tunnel_protocol": "トンネルプロトコル",
       "title": "外部公開 (Cloudflared)",
-      "subtitle": "Cloudflare Tunnel を介してローカルサービスをインターネットに公開します",
       "not_installed": "Cloudflared がインストールされていません",
       "install_hint": "Cloudflared は Cloudflare の無料トンネルツールです。パブリック IP やポート開放なしで、ローカルプロキシをインターネットに公開できます。下のボタンをクリックしてインストールしてください。",
       "install": "今すぐインストール",
@@ -923,7 +929,6 @@
     },
     "router": {
       "title": "モデルルーター",
-      "subtitle": "シリーズごとにモデルをルーティングするか、カスタムマッピングを追加します。\n注: ネイティブなClaudeパススルーモデル (例: claude-opus-4-6-thinking) はデフォルトでシリーズグループをバイパスします。上書きするには「エキスパートカスタムルーティング」を使用してください。",
       "subtitle_simple": "ワイルドカードまたは完全一致マッピングでモデルルーティングをカスタマイズ",
       "background_task_title": "バックグラウンドタスク用モデル",
       "background_task_desc": "タイトル生成や要約など、Claude CLIのバックグラウンドタスクに使用されるモデル (デフォルト: gemini-2.5-flash)",
@@ -1005,7 +1010,6 @@
     },
     "multi_protocol": {
       "title": "マルチプロトコルサポート",
-      "subtitle": "お気に入りの AI ツールや CLI とシームレスに統合",
       "description": "ローカルプロキシは OpenAI、Anthropic、および Gemini プロトコルをサポートしており、幅広いアプリケーションとの互換性を確保しています。",
       "openai_label": "OpenAI プロトコル",
       "anthropic_label": "Anthropic プロトコル",
@@ -1026,7 +1030,6 @@
     },
     "cli_sync": {
       "title": "CLI 設定の一括同期",
-      "subtitle": "現在の API エンドポイントとキーをローカルの AI CLI ツールに素早く同期します。",
       "card_title": "{{name}} 設定",
       "status": {
         "not_installed": "未インストール",
@@ -1330,5 +1333,58 @@
     "placeholder_max_ips": "0 = 無制限",
     "hint_max_ips": "0 は制限なしを意味します",
     "hint_curfew": "空欄で無効。サーバー時間に基づきます。"
+  },
+  "remote_terminal": {
+    "login_button": "SSO でサインイン",
+    "login_button_loading": "SSO ログインを待っています...",
+    "connect_button": "接続",
+    "disconnect_button": "切断",
+    "principal_label": "ユーザー",
+    "host_label": "ホスト",
+    "expires_label": "有効期限",
+    "open_browser_hint": "ブラウザが開くので、会社の SSO アカウントでサインインしてください。",
+    "gateway_not_configured": "SSO ゲートウェイの URL が設定されていません。設定画面で設定してください。",
+    "session_ended": "リモートセッションが終了しました。",
+    "status": {
+      "idle": "未接続",
+      "waiting_sso": "ブラウザで SSO 認証を待っています...",
+      "sso_success": "SSO 認証に成功しました",
+      "connecting": "SSH で接続しています...",
+      "connected": "接続済み",
+      "disconnected": "切断されました",
+      "error": "エラー"
+    },
+    "toast": {
+      "login_failed": "SSO ログインに失敗しました",
+      "connect_failed": "接続に失敗しました",
+      "sync_failed": "ワークスペースの同期に失敗しました",
+      "write_failed": "ターミナルへの入力送信に失敗しました"
+    },
+    "local_dir_label": "ローカルの作業ディレクトリ",
+    "local_dir_placeholder": "フォルダが選択されていません",
+    "choose_folder_button": "フォルダを選択",
+    "sync_now_button": "今すぐ同期",
+    "sync": {
+      "idle": "まだ同期されていません",
+      "syncing": "同期中...",
+      "synced_ago": "{{time}}前に同期しました",
+      "failed": "同期に失敗しました",
+      "no_directory": "先にローカルの作業ディレクトリを選択してください",
+      "pick_before_connect": "接続前に同期するローカルの作業ディレクトリを選択してください"
+    },
+    "add_folder_button": "フォルダを追加",
+    "close_folder_tooltip": "フォルダタブを閉じる",
+    "confirm_close_folder": "このフォルダには実行中のターミナルがあります。閉じてすべて停止しますか？",
+    "empty_state_add_folder": "フォルダを追加してリモートサーバーに同期し、ターミナルを開始してください。",
+    "terminal_tab_label": "ターミナル {{index}}",
+    "terminal_closed_badge": "終了済み",
+    "share_terminal_button": "共有",
+    "share_terminal_tooltip": "表示中のターミナルの共有リンクをコピー",
+    "close_terminal_tooltip": "ターミナルを閉じる",
+    "no_terminals_yet": "このフォルダにはまだターミナルがありません。",
+    "tool": {
+      "codex": "Codex",
+      "claude": "Claude Code"
+    }
   }
 }

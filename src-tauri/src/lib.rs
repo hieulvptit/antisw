@@ -302,6 +302,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -320,7 +321,6 @@ pub fn run() {
         }))
         .manage(commands::proxy::ProxyServiceState::new())
         .manage(commands::cloudflared::CloudflaredState::new())
-        .manage(commands::nine_router_mitm::NineRouterMitmState::new())
         .manage(AppRuntimeFlags { tray_enabled })
         .setup(|app| {
             info!("Setup starting...");
@@ -446,8 +446,6 @@ pub fn run() {
             commands::set_window_theme,
             commands::get_antigravity_path,
             commands::get_antigravity_args,
-            commands::enable_antigravity_vnpay_mode,
-            commands::get_vnpay_mitm_status,
             commands::check_for_updates,
             commands::check_homebrew_installation,
             commands::brew_upgrade_cask,
@@ -547,12 +545,6 @@ pub fn run() {
             commands::cloudflared::cloudflared_start,
             commands::cloudflared::cloudflared_stop,
             commands::cloudflared::cloudflared_get_status,
-            // 9NICE MITM commands (antigravity)
-            commands::nine_router_mitm::nine_router_mitm_status,
-            commands::nine_router_mitm::nine_router_mitm_start,
-            commands::nine_router_mitm::nine_router_mitm_stop,
-            commands::nine_router_mitm::nine_router_mitm_hosts_active,
-            commands::nine_router_mitm::nine_router_mitm_cert_installed,
             // Debug console commands
             modules::log_bridge::enable_debug_console,
             modules::log_bridge::disable_debug_console,
@@ -581,6 +573,20 @@ pub fn run() {
             commands::cancel_vnpay_jwt_listener,
             commands::check_claude_vnpay_installed,
             commands::remove_claude_vnpay_settings,
+            // Remote Terminal commands (SSO -> ephemeral SSH cert -> codex CLI)
+            commands::remote_terminal::remote_terminal_start_login,
+            commands::remote_terminal::remote_terminal_cancel_login,
+            commands::remote_terminal::remote_terminal_add_folder,
+            commands::remote_terminal::remote_terminal_close_folder,
+            commands::remote_terminal::remote_terminal_sync_folder,
+            commands::remote_terminal::remote_terminal_open_terminal,
+            commands::remote_terminal::remote_terminal_list_tools,
+            commands::remote_terminal::remote_terminal_write,
+            commands::remote_terminal::remote_terminal_resize,
+            commands::remote_terminal::remote_terminal_close_terminal,
+            commands::remote_terminal::remote_terminal_restore_session,
+            commands::remote_terminal::remote_terminal_get_share_link,
+            commands::remote_terminal::remote_terminal_trace,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

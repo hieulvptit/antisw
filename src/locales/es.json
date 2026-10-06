@@ -40,7 +40,8 @@
     "create_success": "Creado exitosamente",
     "update_success": "Actualizado exitosamente",
     "delete_success": "Eliminado exitosamente",
-    "copied": "Copiado al portapapeles"
+    "copied": "Copiado al portapapeles",
+    "copy_failed": "Error al copiar al portapapeles"
   },
   "nav": {
     "dashboard": "Panel",
@@ -73,7 +74,8 @@
     "switch_to_spanish_short": "ES",
     "switch_to_malay": "Cambiar a Malayo",
     "switch_to_malay_short": "MY",
-    "user_token": "Tokens de usuario"
+    "user_token": "Tokens de usuario",
+    "remote_terminal": "Terminal Remota"
   },
   "dashboard": {
     "hello": "Hola, Usuario 👋",
@@ -534,6 +536,13 @@
       "placeholder": "Ingrese las instrucciones globales del sistema...\nEjemplo: Eres un desarrollador full-stack senior experto en React y Rust. Responde en español.",
       "char_count": "{{count}} caracteres",
       "long_prompt_warning": "Las instrucciones son muy largas (más de 2000 caracteres) y pueden consumir mucho espacio del contexto."
+    },
+    "remote_terminal": {
+      "title": "Terminal Remota (SSO)",
+      "gateway_url_label": "URL base del SSO Gateway",
+      "gateway_url_placeholder": "https://sso.example.com",
+      "gateway_url_desc": "URL base de la puerta de enlace SSO utilizada para iniciar sesión y obtener un certificado SSH de corta duración para la Terminal Remota.",
+      "save": "Guardar"
     }
   },
   "tray": {
@@ -607,7 +616,6 @@
       "zai": {
         "title": "Proveedor z.ai (GLM)",
         "title_tooltip": "Upstream compatible con Anthropic opcional para el protocolo Claude. Solo afecta los endpoints de Anthropic; el enrutamiento de cuentas de Google permanece sin cambios.",
-        "subtitle": "Upstream compatible con Anthropic opcional solo para el protocolo Claude.",
         "enabled": "Habilitado",
         "enabled_tooltip": "Habilita el enrutamiento z.ai para solicitudes Anthropic según el modo de despacho seleccionado.",
         "base_url": "URL Base",
@@ -682,7 +690,6 @@
       "scheduling": {
         "title": "Rotación y Programación de Cuentas",
         "title_tooltip": "Controla cómo las sesiones se vinculan a cuentas y cómo se manejan los límites de tasa.",
-        "subtitle": "Optimiza el Caché de Prompts y el manejo de límites de tasa para todos los protocolos (OpenAI/Gemini/Claude).",
         "mode": "Modo de Programación",
         "mode_tooltip": "Cache-First: Vincular sesión a cuenta, esperar en límite de tasa (maximizar utilidad de caché); Balance: Vincular sesión, cambiar cuenta en límite de tasa; Performance: Round-robin estándar.",
         "modes": {
@@ -726,7 +733,6 @@
     },
     "cloudflared": {
       "title": "Acceso Público (Cloudflared)",
-      "subtitle": "Exponga su servicio local a internet a través de Cloudflare Tunnel",
       "not_installed": "Cloudflared no instalado",
       "install_hint": "Cloudflared es una herramienta de túnel gratuita de Cloudflare. Expone su proxy local a internet sin una IP pública o reenvío de puertos. Haga clic en el botón de abajo para instalar.",
       "install": "Instalar Ahora",
@@ -824,7 +830,6 @@
     },
     "router": {
       "title": "Enrutador de Modelos",
-      "subtitle": "Enrute modelos por serie o agregue mapeos exactos personalizados.\nNota: Los modelos nativos de paso Claude (ej. claude-opus-4-6-thinking) omiten los grupos de series por defecto. Use \"Enrutamiento Personalizado Experto\" para sobreescribir.",
       "subtitle_simple": "Personalice el enrutamiento de modelos con comodines o mapeos exactos",
       "background_task_title": "Modelo de Tarea en Segundo Plano",
       "background_task_desc": "Modelo usado para tareas en segundo plano de Claude CLI como generación de título, resumen, etc. (Predeterminado: gemini-2.5-flash)",
@@ -881,7 +886,6 @@
     },
     "multi_protocol": {
       "title": "Soporte Multi-Protocolo",
-      "subtitle": "Integración perfecta con sus herramientas y CLIs de IA favoritas",
       "description": "El proxy local soporta protocolos OpenAI, Anthropic y Gemini, asegurando compatibilidad con una amplia gama de aplicaciones.",
       "openai_label": "Protocolo OpenAI",
       "anthropic_label": "Protocolo Anthropic",
@@ -902,7 +906,6 @@
     },
     "cli_sync": {
       "title": "Sincronización CLI con Un Clic",
-      "subtitle": "Sincronice rápidamente endpoints API actuales y claves a sus herramientas CLI de IA locales.",
       "card_title": "Configuración de {{name}}",
       "status": {
         "not_installed": "No detectado",
@@ -1080,5 +1083,58 @@
     "placeholder_max_ips": "0 = Ilimitado",
     "hint_max_ips": "0 significa ilimitado",
     "hint_curfew": "Dejar vacío para desactivar. Basado en la hora del servidor."
+  },
+  "remote_terminal": {
+    "login_button": "Iniciar sesión con SSO",
+    "login_button_loading": "Esperando inicio de sesión SSO...",
+    "connect_button": "Conectar",
+    "disconnect_button": "Desconectar",
+    "principal_label": "Usuario",
+    "host_label": "Host",
+    "expires_label": "Expira el",
+    "open_browser_hint": "Se abrirá una ventana del navegador para que inicies sesión con tu cuenta SSO corporativa.",
+    "gateway_not_configured": "La URL del SSO Gateway no está configurada. Configúrala en Ajustes.",
+    "session_ended": "La sesión remota ha finalizado.",
+    "status": {
+      "idle": "Sin conexión",
+      "waiting_sso": "Esperando autenticación SSO en el navegador...",
+      "sso_success": "Autenticación SSO correcta",
+      "connecting": "Conectando por SSH...",
+      "connected": "Conectado",
+      "disconnected": "Desconectado",
+      "error": "Error"
+    },
+    "toast": {
+      "login_failed": "Error al iniciar sesión SSO",
+      "connect_failed": "Error al conectar",
+      "sync_failed": "Error al sincronizar el workspace",
+      "write_failed": "No se pudo enviar la entrada a la terminal"
+    },
+    "local_dir_label": "Directorio de trabajo local",
+    "local_dir_placeholder": "Ninguna carpeta seleccionada",
+    "choose_folder_button": "Elegir carpeta",
+    "sync_now_button": "Sincronizar ahora",
+    "sync": {
+      "idle": "Aún no sincronizado",
+      "syncing": "Sincronizando...",
+      "synced_ago": "Sincronizado hace {{time}}",
+      "failed": "Error de sincronización",
+      "no_directory": "Elige primero un directorio de trabajo local",
+      "pick_before_connect": "Elige un directorio de trabajo local para sincronizar antes de conectar"
+    },
+    "add_folder_button": "Agregar carpeta",
+    "close_folder_tooltip": "Cerrar pestaña de carpeta",
+    "confirm_close_folder": "Esta carpeta tiene terminales en ejecución. ¿Cerrar y detener todas?",
+    "empty_state_add_folder": "Agrega una carpeta para sincronizarla con el servidor remoto y abrir una terminal.",
+    "terminal_tab_label": "Terminal {{index}}",
+    "terminal_closed_badge": "cerrada",
+    "share_terminal_button": "Compartir",
+    "share_terminal_tooltip": "Copiar un enlace para compartir la terminal que estás viendo",
+    "close_terminal_tooltip": "Cerrar terminal",
+    "no_terminals_yet": "Todavía no hay terminales en esta carpeta.",
+    "tool": {
+      "codex": "Codex",
+      "claude": "Claude Code"
+    }
   }
 }

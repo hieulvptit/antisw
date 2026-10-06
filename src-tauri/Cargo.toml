@@ -1,6 +1,6 @@
 [package]
 name = "antigravity_sw"
-version = "5.1.3"
+version = "5.1.4"
 description = "Anti tools for AI"
 authors = ["you"]
 license = "CC-BY-NC-SA-4.0"
@@ -26,7 +26,14 @@ serde_json = { version = "1", features = ["preserve_order"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = "0.4"
 dirs = "5.0"
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "socks", "blocking", "rustls-tls"] }
+# "http2" is NOT a default here (default-features is off), so without it every
+# request falls back to HTTP/1.1 - which the Remote Terminal transport feels
+# directly: one keystroke is one POST /term/input, and H1 cannot multiplex, so
+# two keystrokes in flight at once force a SECOND TCP+TLS handshake (measured:
+# 65ms on a warm connection vs 150ms-1.1s on a cold one). With h2 the input
+# POSTs and the SSE stream share a single connection that the stream itself
+# keeps warm. See `client()` in modules/remote_terminal_http.rs.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "socks", "blocking", "rustls-tls", "http2"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -36,6 +43,7 @@ tokio = { version = "1", features = ["full"] }
 url = "2.5.7"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-fs = "2.4.5"
+tauri-plugin-clipboard-manager = "2"
 image = { version = "0.25.9", default-features = false, features = ["png", "webp"] }
 thiserror = "2.0.17"
 
@@ -77,6 +85,7 @@ plist = "1.7"
 rquest = { version = "5.1.0", features = ["json", "stream", "socks", "cookies"] }
 rquest-util = "2.2.1"
 hostname = "0.4"
+portable-pty = "0.9.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
