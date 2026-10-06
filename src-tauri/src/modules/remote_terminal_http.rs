@@ -117,14 +117,18 @@ async fn refresh_route_cached() {
     }
 }
 
-async fn refresh_route() {
-    let direct_up = client()
+pub async fn check_direct_connection() -> bool {
+    client()
         .get(format!("{}/term/tools", TERM_API_DIRECT_URL))
         .timeout(ROUTE_PROBE_TIMEOUT)
         .send()
         .await
         .map(|r| r.status().is_success())
-        .unwrap_or(false);
+        .unwrap_or(false)
+}
+
+async fn refresh_route() {
+    let direct_up = check_direct_connection().await;
 
     if let Ok(mut lock) = LAST_ROUTE_PROBE.get_or_init(|| Mutex::new(None)).lock() {
         *lock = Some(Instant::now());
@@ -179,6 +183,16 @@ const OUTPUT_FLUSH_BYTES: usize = 16 * 1024;
 struct CachedAppToken {
     token: String,
     obtained_at: Instant,
+    priv_key_path: PathBuf,
+    ssh_user: String,
+}
+
+impl CachedAppToken {
+    fn valid_for(&self, priv_key_path: &Path, ssh_user: &str) -> bool {
+        self.priv_key_path == priv_key_path
+            && self.ssh_user == ssh_user
+            && self.obtained_at.elapsed() < APP_TOKEN_MAX_AGE
+    }
 }
 
 /// One terminal streaming over HTTP. The `JoinHandle` is how a close stops
@@ -196,6 +210,7 @@ struct HttpSession {
 }
 
 static APP_TOKEN: OnceLock<Mutex<Option<CachedAppToken>>> = OnceLock::new();
+static APP_TOKEN_HANDSHAKE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 static HTTP_SESSIONS: OnceLock<Mutex<HashMap<String, HttpSession>>> = OnceLock::new();
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
@@ -333,13 +348,20 @@ async fn sign_with_ssh_key(priv_key_path: &Path, data: &str) -> AppResult<String
 
 /// Run the challenge/sign/verify handshake and return a fresh app token.
 async fn fetch_app_token(priv_key_path: &Path, ssh_user: &str) -> AppResult<String> {
-    let challenge: ChallengeResponse = client()
-        .post(format!("{}/api/v1/term-challenge", base_url()))
+    // Keep both halves of a challenge on the same route, even if a stream
+    // reconnect refreshes the global route while ssh-keygen is signing.
+    let route = base_url();
+    let response = client()
+        .post(format!("{}/api/v1/term-challenge", route))
         .timeout(CONTROL_TIMEOUT)
         .json(&serde_json::json!({ "ssh_user": ssh_user }))
         .send()
         .await
-        .map_err(|e| AppError::RemoteTerminal(format!("term_challenge_request_failed: {}", e)))?
+        .map_err(|e| AppError::RemoteTerminal(format!("term_challenge_request_failed: {}", e)))?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(AppError::RemoteTerminal("remote_terminal_auth_required".into()));
+    }
+    let challenge: ChallengeResponse = response
         .error_for_status()
         .map_err(|e| AppError::RemoteTerminal(format!("term_challenge_rejected: {}", e)))?
         .json()
@@ -348,8 +370,8 @@ async fn fetch_app_token(priv_key_path: &Path, ssh_user: &str) -> AppResult<Stri
 
     let signature = sign_with_ssh_key(priv_key_path, &challenge.nonce).await?;
 
-    let auth: AuthResponse = client()
-        .post(format!("{}/api/v1/term-auth", base_url()))
+    let response = client()
+        .post(format!("{}/api/v1/term-auth", route))
         .timeout(CONTROL_TIMEOUT)
         .json(&serde_json::json!({
             "ssh_user": ssh_user,
@@ -358,7 +380,11 @@ async fn fetch_app_token(priv_key_path: &Path, ssh_user: &str) -> AppResult<Stri
         }))
         .send()
         .await
-        .map_err(|e| AppError::RemoteTerminal(format!("term_auth_request_failed: {}", e)))?
+        .map_err(|e| AppError::RemoteTerminal(format!("term_auth_request_failed: {}", e)))?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(AppError::RemoteTerminal("remote_terminal_auth_required".into()));
+    }
+    let auth: AuthResponse = response
         .error_for_status()
         .map_err(|e| AppError::RemoteTerminal(format!("term_auth_rejected: {}", e)))?
         .json()
@@ -370,9 +396,12 @@ async fn fetch_app_token(priv_key_path: &Path, ssh_user: &str) -> AppResult<Stri
 
 /// Cached app token, re-fetched when missing or near expiry.
 async fn ensure_app_token(priv_key_path: &Path, ssh_user: &str) -> AppResult<String> {
+    // Multiple workspace checks/terminal opens must not issue overlapping
+    // challenges for the same account or cache a token from a previous login.
+    let _guard = APP_TOKEN_HANDSHAKE.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
     if let Ok(lock) = app_token_cache().lock() {
         if let Some(cached) = lock.as_ref() {
-            if cached.obtained_at.elapsed() < APP_TOKEN_MAX_AGE {
+            if cached.valid_for(priv_key_path, ssh_user) {
                 return Ok(cached.token.clone());
             }
         }
@@ -381,7 +410,12 @@ async fn ensure_app_token(priv_key_path: &Path, ssh_user: &str) -> AppResult<Str
     let token = fetch_app_token(priv_key_path, ssh_user).await?;
 
     if let Ok(mut lock) = app_token_cache().lock() {
-        *lock = Some(CachedAppToken { token: token.clone(), obtained_at: Instant::now() });
+        *lock = Some(CachedAppToken {
+            token: token.clone(),
+            obtained_at: Instant::now(),
+            priv_key_path: priv_key_path.to_path_buf(),
+            ssh_user: ssh_user.to_string(),
+        });
     }
     Ok(token)
 }
@@ -389,7 +423,7 @@ async fn ensure_app_token(priv_key_path: &Path, ssh_user: &str) -> AppResult<Str
 /// Drop any cached app token, so the next call re-runs the handshake. Used
 /// when the server rejects a token we believed was still good (e.g. it
 /// restarted, since its token store is in-memory by design).
-fn invalidate_app_token() {
+pub fn invalidate_app_token() {
     if let Ok(mut lock) = app_token_cache().lock() {
         *lock = None;
     }
@@ -409,10 +443,14 @@ pub async fn workspace_request(priv_key_path: &Path, ssh_user: &str, action: &st
             continue;
         }
         let status = response.status();
+        let parsed = response.json::<serde_json::Value>().await;
+        // A missing API route often returns HTML, while a supported API may
+        // return a JSON 404 for a missing workspace. Preserve domain errors.
         if status == reqwest::StatusCode::NOT_FOUND {
-            return Err(AppError::RemoteTerminal("workspace_protocol_not_supported".into()));
+            let error = parsed.as_ref().ok().and_then(|body| body["error"].as_str());
+            return Err(AppError::RemoteTerminal(workspace_not_found_error(error).into()));
         }
-        let parsed: serde_json::Value = response.json().await
+        let parsed = parsed
             .map_err(|e| AppError::RemoteTerminal(format!("workspace_response_invalid: {}", e)))?;
         if !status.is_success() {
             return Err(AppError::RemoteTerminal(parsed["error"].as_str().unwrap_or("workspace_check_unavailable").to_string()));
@@ -420,6 +458,13 @@ pub async fn workspace_request(priv_key_path: &Path, ssh_user: &str, action: &st
         return Ok(parsed);
     }
     Err(AppError::RemoteTerminal("workspace_check_unauthorized".into()))
+}
+
+fn workspace_not_found_error(error: Option<&str>) -> &str {
+    match error {
+        None | Some("" | "not_found" | "Not Found" | "route_not_found") => "workspace_protocol_not_supported",
+        Some(error) => error,
+    }
 }
 
 /// Trade the app token for a per-terminal session token.
@@ -1152,6 +1197,28 @@ pub fn is_attached(terminal_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_workspace_is_not_a_missing_protocol() {
+        assert_eq!(workspace_not_found_error(None), "workspace_protocol_not_supported");
+        assert_eq!(workspace_not_found_error(Some("not_found")), "workspace_protocol_not_supported");
+        assert_eq!(workspace_not_found_error(Some("workspace_not_found")), "workspace_not_found");
+    }
+
+    #[test]
+    fn cached_app_token_requires_same_login_and_unexpired_token() {
+        let mut cached = CachedAppToken {
+            token: "test-token".into(),
+            obtained_at: Instant::now(),
+            priv_key_path: PathBuf::from("login-a"),
+            ssh_user: "remote-user".into(),
+        };
+        assert!(cached.valid_for(Path::new("login-a"), "remote-user"));
+        assert!(!cached.valid_for(Path::new("login-b"), "remote-user"));
+        assert!(!cached.valid_for(Path::new("login-a"), "another-user"));
+        cached.obtained_at = Instant::now() - APP_TOKEN_MAX_AGE;
+        assert!(!cached.valid_for(Path::new("login-a"), "remote-user"));
+    }
 
     #[test]
     fn parses_base64_data_frame() {

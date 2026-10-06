@@ -49,6 +49,7 @@ interface RestoredFolderPayload {
     tab_id: string;
     local_dir: string;
     slug: string;
+    files_synced: boolean;
 }
 
 interface RestoredTerminalPayload {
@@ -119,6 +120,57 @@ function RemoteTerminal() {
 
     const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [isSharing, setIsSharing] = useState(false);
+    const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
+    const openingTerminalRef = useRef(false);
+    const [remoteConnected, setRemoteConnected] = useState(false);
+    const [authRequired, setAuthRequired] = useState(false);
+    const describeRemoteError = useCallback((error: unknown): string => {
+        const message = String(error);
+        if (message.includes('workspace_protocol_not_support')) {
+            return t('remote_terminal.workspace.protocol_not_supported');
+        }
+        if (message.includes('remote_terminal_auth_required')
+            || message.includes('workspace_check_unauthorized')
+            || (message.includes('term_auth_rejected') && message.includes('401'))) {
+            setAuthRequired(true);
+            return t('remote_terminal.auth.required');
+        }
+        return message;
+    }, [t]);
+
+    useEffect(() => {
+        if (loginStatus !== 'logged_in') {
+            setRemoteConnected(false);
+            return;
+        }
+        let cancelled = false;
+        let checking = false;
+        const checkConnection = async () => {
+            if (checking) return;
+            checking = true;
+            try {
+                const connected = await invoke<boolean>('remote_terminal_check_connection');
+                if (!cancelled) setRemoteConnected(connected && navigator.onLine);
+            } catch {
+                if (!cancelled) setRemoteConnected(false);
+            } finally {
+                checking = false;
+            }
+        };
+        void checkConnection();
+        const interval = setInterval(() => void checkConnection(), 10000);
+        window.addEventListener('focus', checkConnection);
+        window.addEventListener('online', checkConnection);
+        const onOffline = () => setRemoteConnected(false);
+        window.addEventListener('offline', onOffline);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+            window.removeEventListener('focus', checkConnection);
+            window.removeEventListener('online', checkConnection);
+            window.removeEventListener('offline', onOffline);
+        };
+    }, [loginStatus]);
 
     // xterm.js instances live outside React state/store - one per terminal_id,
     // created once and kept mounted (hidden via CSS) for the terminal's whole
@@ -693,10 +745,12 @@ function RemoteTerminal() {
     const hydrateSession = useCallback((session: RestoredSessionPayload) => {
         const current = useRemoteTerminalStore.getState();
         setReady(session.ready);
+        setAuthRequired(false);
         setLoginStatus('logged_in');
         session.folders.forEach((f) => {
             if (!current.folders[f.tab_id]) {
                 addFolder({ tabId: f.tab_id, localDir: f.local_dir, slug: f.slug });
+                updateFolderSync(f.tab_id, { filesSynced: f.files_synced });
             }
         });
         session.terminals.forEach((term) => {
@@ -725,7 +779,7 @@ function RemoteTerminal() {
                 console.error('[RemoteTerminal] Failed to list remote tools, falling back to codex:', e);
                 setAvailableTools(['codex']);
             });
-    }, [setReady, setLoginStatus, addFolder, addTerminal, setAvailableTools]);
+    }, [setReady, setLoginStatus, addFolder, addTerminal, setAvailableTools, updateFolderSync]);
 
     // Restore the whole screen once on mount: after a full app relaunch this
     // logs back in (if the persisted key is still valid) and reconnects every
@@ -821,13 +875,14 @@ function RemoteTerminal() {
             return;
         }
         try {
-            const selected = await openDialog({ directory: true, multiple: false });
+            const selected = await openDialog({ directory: true, multiple: false, title: t('remote_terminal.empty_folder_hint') });
             if (typeof selected !== 'string' || !selected) return;
             setLastLocalDir(selected);
             const result = await invoke<AddFolderResult>('remote_terminal_add_folder', { localDir: selected });
             addFolder({ tabId: result.tab_id, localDir: selected, slug: result.slug });
         } catch (e) {
-            showToast(String(e), 'error');
+            showToast(String(e).includes('local_dir_not_empty_new_project_required')
+                ? t('remote_terminal.empty_folder_required') : String(e), 'error');
         }
     };
 
@@ -860,19 +915,20 @@ function RemoteTerminal() {
                 return result;
             })
             .catch((e) => {
+                const message = describeRemoteError(e);
                 if (useRemoteTerminalStore.getState().folders[tabId]?.syncStatus !== 'syncing') {
-                    updateFolderSync(tabId, { workspaceStatus: 'error', workspaceError: String(e) });
+                    updateFolderSync(tabId, { workspaceStatus: 'error', workspaceError: message });
                 }
                 return null;
             })
             .finally(() => checkInFlightRef.current.delete(tabId));
         checkInFlightRef.current.set(tabId, promise);
         return promise;
-    }, [updateFolderSync]);
+    }, [updateFolderSync, describeRemoteError]);
 
     const folderIdsKey = folderOrder.join(',');
     useEffect(() => {
-        if (loginStatus !== 'logged_in') return;
+        if (loginStatus !== 'logged_in' || authRequired) return;
         const checkAll = async () => {
             if (document.visibilityState === 'hidden') return;
             for (const id of useRemoteTerminalStore.getState().folderOrder) await checkWorkspace(id);
@@ -887,7 +943,7 @@ function RemoteTerminal() {
             window.removeEventListener('focus', onVisible);
             document.removeEventListener('visibilitychange', onVisible);
         };
-    }, [loginStatus, folderIdsKey, checkWorkspace]);
+    }, [loginStatus, authRequired, folderIdsKey, checkWorkspace]);
 
     const handleSyncFolder = useCallback(async (tabId: string, download = false): Promise<boolean> => {
         await checkInFlightRef.current.get(tabId);
@@ -896,15 +952,16 @@ function RemoteTerminal() {
         let success = false;
         try {
             await invoke(download ? 'remote_terminal_download_folder' : 'remote_terminal_sync_folder', { tabId });
-            updateFolderSync(tabId, { syncStatus: 'synced', syncMessage: null, lastSyncedAt: Date.now() });
+            updateFolderSync(tabId, { syncStatus: 'synced', syncMessage: null, lastSyncedAt: Date.now(), filesSynced: true });
             success = true;
         } catch (e) {
-            updateFolderSync(tabId, { syncStatus: 'error', syncMessage: String(e) });
-            showToast(t('remote_terminal.toast.sync_failed'), 'error');
+            const message = describeRemoteError(e);
+            updateFolderSync(tabId, { syncStatus: 'error', syncMessage: message });
+            showToast(message, 'error');
         }
         await checkWorkspace(tabId);
         return success;
-    }, [t, updateFolderSync, checkWorkspace]);
+    }, [describeRemoteError, updateFolderSync, checkWorkspace]);
 
     // Measure the real terminal size BEFORE the PTY is opened, using a
     // throwaway xterm.js instance (same font metrics as the real terminals)
@@ -942,12 +999,34 @@ function RemoteTerminal() {
     }, []);
 
     const handleOpenTerminal = async (tabId: string, tool: RemoteTool) => {
+        const folder = useRemoteTerminalStore.getState().folders[tabId];
+        if (!folder || folder.syncStatus === 'syncing' || openingTerminalRef.current) return;
+        openingTerminalRef.current = true;
+        setIsOpeningTerminal(true);
         try {
+            await checkInFlightRef.current.get(tabId);
             const { cols, rows } = measureViewport();
             const terminalId = await invoke<string>('remote_terminal_open_terminal', { tabId, tool, cols, rows });
+            updateFolderSync(tabId, {
+                filesSynced: true,
+                syncStatus: 'synced',
+                syncMessage: null,
+                workspaceStatus: 'synced',
+                workspaceError: null,
+                ...(!folder.filesSynced ? { lastSyncedAt: Date.now() } : {}),
+            });
             addTerminal(terminalId, tabId, tool);
         } catch (e) {
-            showToast(String(e), 'error');
+            const message = describeRemoteError(e);
+            showToast(message.includes('workspace_files_not_synced_user_sync_unavailable')
+                ? t('remote_terminal.sync.files_required')
+                : message.includes('workspace_not_synced:')
+                    ? t(`remote_terminal.workspace.${message.split('workspace_not_synced:')[1].trim()}`)
+                    : message, 'error');
+            await checkWorkspace(tabId);
+        } finally {
+            openingTerminalRef.current = false;
+            setIsOpeningTerminal(false);
         }
     };
 
@@ -981,7 +1060,7 @@ function RemoteTerminal() {
             setShareUrl(url);
             showToast(t('common.copied'), 'success');
         } catch (e) {
-            showToast(String(e), 'error');
+            showToast(describeRemoteError(e), 'error');
         } finally {
             setIsSharing(false);
         }
@@ -1005,6 +1084,7 @@ function RemoteTerminal() {
         if (tab.syncStatus === 'synced' && tab.lastSyncedAt) {
             return t('remote_terminal.sync.synced_ago', { time: formatElapsed(tab.lastSyncedAt) });
         }
+        if (tab.filesSynced) return t('remote_terminal.sync.synced');
         return t('remote_terminal.sync.idle');
     };
 
@@ -1028,11 +1108,13 @@ function RemoteTerminal() {
             key={tool}
             type="button"
             onClick={() => handleOpenTerminal(activeTabId!, tool)}
-            className={variant === 'prominent'
+            disabled={!activeTab || activeTab.syncStatus === 'syncing' || isOpeningTerminal || authRequired}
+            title={!activeTab?.filesSynced ? t('remote_terminal.sync.new_project') : t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)}
+            className={'disabled:opacity-40 disabled:cursor-not-allowed ' + (variant === 'prominent'
                 ? 'flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 transition-colors'
-                : 'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 hover:bg-gray-100 dark:bg-base-200/60 dark:text-gray-400 dark:hover:bg-base-200 transition-colors shrink-0'}
+                : 'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 hover:bg-gray-100 dark:bg-base-200/60 dark:text-gray-400 dark:hover:bg-base-200 transition-colors shrink-0')}
         >
-            <Plus className="w-3.5 h-3.5" />
+            {isOpeningTerminal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
             {t(`remote_terminal.tool.${tool}`)}
         </button>
     ));
@@ -1116,6 +1198,7 @@ function RemoteTerminal() {
                             })}
                             <button
                                 onClick={handleAddFolder}
+                                title={t('remote_terminal.empty_folder_hint')}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors shrink-0"
                             >
                                 <Plus className="w-3.5 h-3.5" />
@@ -1125,12 +1208,35 @@ function RemoteTerminal() {
                         {ready && (
                             <div className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
                                 <span className="inline-flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full bg-green-500" />
+                                    <span
+                                        role="img"
+                                        aria-label={t(remoteConnected ? 'remote_terminal.status.remote_connected' : 'remote_terminal.status.remote_disconnected')}
+                                        title={t(remoteConnected ? 'remote_terminal.status.remote_connected' : 'remote_terminal.status.remote_disconnected')}
+                                        className={`w-2 h-2 rounded-full ${remoteConnected ? 'bg-green-500' : 'bg-red-500'}`}
+                                    />
                                     {t('remote_terminal.principal_label')}: {ready.principal}
                                 </span>
                             </div>
                         )}
                     </div>
+
+                    {authRequired && (
+                        <div role="alert" className="flex items-center gap-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
+                            <p className="flex-1 text-xs text-amber-700 dark:text-amber-300">
+                                {t('remote_terminal.auth.required')}
+                            </p>
+                            <button onClick={handleLogin} className="flex items-center gap-1.5 rounded-full bg-amber-600 px-3 py-1.5 text-xs text-white shrink-0">
+                                <LogIn className="w-3.5 h-3.5" />
+                                {t('remote_terminal.auth.login_again')}
+                            </button>
+                        </div>
+                    )}
+
+                    {!remoteConnected && (
+                        <p role="status" className="text-xs text-red-500">
+                            {t('remote_terminal.status.remote_disconnected')}
+                        </p>
+                    )}
 
                     {folderOrder.length === 0 && (
                         <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4 rounded-2xl border border-gray-200 dark:border-base-200 bg-white dark:bg-base-100 px-6 text-center">
@@ -1165,7 +1271,10 @@ function RemoteTerminal() {
                                 is allowed to move the terminal. */}
                             <div className="shrink-0 flex items-center gap-3 min-h-16 rounded-xl border border-gray-200 dark:border-base-200 px-4 py-2" role="status" aria-live="polite">
                                 <span className={`text-xs flex-1 ${['download_required', 'commit_required', 'conflict', 'error'].includes(activeTab.workspaceStatus) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'}`} title={activeTab.workspaceError || undefined}>
-                                    {t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)}
+                                    {activeTab.workspaceError || (
+                                        !activeTab.filesSynced ? t('remote_terminal.sync.new_project')
+                                            : t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)
+                                    )}
                                 </span>
                                 {activeTab.workspaceStatus === 'download_required' && (
                                     <button onClick={() => handleSyncFolder(activeTab.tabId, true)} disabled={activeTab.syncStatus === 'syncing'} className="text-xs rounded-full bg-blue-600 text-white px-3 py-1.5 disabled:opacity-40">
@@ -1189,7 +1298,7 @@ function RemoteTerminal() {
                                 </div>
                                 <button
                                     onClick={() => handleSyncFolder(activeTab.tabId)}
-                                    disabled={activeTab.syncStatus === 'syncing' || !['synced', 'upload_required'].includes(activeTab.workspaceStatus)}
+                                    disabled={authRequired || activeTab.syncStatus === 'syncing' || !['synced', 'upload_required'].includes(activeTab.workspaceStatus)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                                 >
                                     <RefreshCw className={`w-3.5 h-3.5 ${activeTab.syncStatus === 'syncing' ? 'animate-spin' : ''}`} />

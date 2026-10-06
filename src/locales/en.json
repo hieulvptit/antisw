@@ -1396,7 +1396,12 @@
         "hint_curfew": "Leave empty to disable. Based on server time."
     },
     "remote_terminal": {
+        "auth": {
+            "required": "The terminal service rejected your saved SSO credentials. Sign in again to renew access; your folder tabs will be kept.",
+            "login_again": "Sign in again"
+        },
         "workspace": {
+            "protocol_not_supported": "The workspace sync API returned not found (404). The terminal service or server routing must be updated before syncing and opening terminals.",
             "unknown": "Workspace needs to be checked before syncing.",
             "checking": "Checking workspace and session…",
             "synced": "Workspace and session are up to date.",
@@ -1425,7 +1430,9 @@
             "connecting": "Connecting via SSH...",
             "connected": "Connected",
             "disconnected": "Disconnected",
-            "error": "Error"
+            "error": "Error",
+            "remote_connected": "Connected to remote server.",
+            "remote_disconnected": "No connection to remote server. Files and user cannot be synced to the server."
         },
         "toast": {
             "login_failed": "SSO login failed",
@@ -1438,17 +1445,20 @@
         "choose_folder_button": "Choose folder",
         "sync_now_button": "Sync now",
         "sync": {
+            "new_project": "New project not synced yet. Click Codex or Claude to sync the empty workspace to the server and open a terminal.",
+            "synced": "Files synced to server",
             "idle": "Not synced yet",
             "syncing": "Syncing...",
             "synced_ago": "Synced {{time}} ago",
             "failed": "Sync failed",
             "no_directory": "Please choose a local working directory first",
-            "pick_before_connect": "Choose a local working directory to sync before connecting"
+            "pick_before_connect": "Choose a local working directory to sync before connecting",
+            "files_required": "Files have not been synced to the server. User sync and terminals are unavailable until you click Sync now."
         },
         "add_folder_button": "Add folder",
         "close_folder_tooltip": "Close folder tab",
         "confirm_close_folder": "This folder has running terminals. Close it and stop all of them?",
-        "empty_state_add_folder": "Add a folder to sync it to the remote server and start a terminal.",
+        "empty_state_add_folder": "Add an empty folder for a new project, sync it to the server, then open a terminal.",
         "terminal_tab_label": "Terminal {{index}}",
         "terminal_closed_badge": "closed",
         "share_terminal_button": "Share",
@@ -1462,6 +1472,8 @@
         "tool": {
             "codex": "Codex",
             "claude": "Claude Code"
-        }
+        },
+        "empty_folder_hint": "Choose an empty folder for a new project",
+        "empty_folder_required": "Only empty folders can be added for new projects. The selected folder contains files or subfolders (including hidden files)."
     }
 }

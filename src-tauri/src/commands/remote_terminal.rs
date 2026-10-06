@@ -8,6 +8,12 @@ use crate::error::AppResult;
 use crate::modules::remote_terminal;
 use crate::modules::remote_terminal::{AddFolderResult, RestoredSession};
 
+/// Probe the actual internal terminal service, independently of SSO state.
+#[tauri::command]
+pub async fn remote_terminal_check_connection() -> bool {
+    crate::modules::remote_terminal_http::check_direct_connection().await
+}
+
 /// Start the SSO login flow (one-time, global for the whole session):
 /// generates an ephemeral keypair, starts the local callback listener, and
 /// opens the SSO gateway URL in the system browser. Result arrives later via

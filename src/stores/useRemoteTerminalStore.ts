@@ -29,6 +29,7 @@ export interface FolderTabState {
     syncMessage: string | null;
     syncOutputLine: string | null;
     lastSyncedAt: number | null;
+    filesSynced: boolean;
     workspaceStatus: WorkspaceStatus;
     workspaceError: string | null;
     terminalIds: string[];
@@ -100,7 +101,7 @@ interface RemoteTerminalState {
     setActiveTab: (tabId: string | null) => void;
     updateFolderSync: (
         tabId: string,
-        patch: Partial<Pick<FolderTabState, 'syncStatus' | 'syncMessage' | 'syncOutputLine' | 'lastSyncedAt' | 'workspaceStatus' | 'workspaceError'>>,
+        patch: Partial<Pick<FolderTabState, 'syncStatus' | 'syncMessage' | 'syncOutputLine' | 'lastSyncedAt' | 'filesSynced' | 'workspaceStatus' | 'workspaceError'>>,
     ) => void;
 
     addTerminal: (terminalId: string, tabId: string, tool: RemoteTool) => void;
@@ -159,6 +160,7 @@ export const useRemoteTerminalStore = create<RemoteTerminalState>((set) => ({
                 syncMessage: null,
                 syncOutputLine: null,
                 lastSyncedAt: null,
+                filesSynced: false,
                 workspaceStatus: 'unknown',
                 workspaceError: null,
                 terminalIds: [],

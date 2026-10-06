@@ -1203,7 +1203,12 @@
         "hint_curfew": "Để trống để tắt. Dựa trên giờ máy chủ."
     },
     "remote_terminal": {
+        "auth": {
+            "required": "Dịch vụ terminal từ chối thông tin SSO đang lưu. Hãy đăng nhập lại để cấp lại quyền truy cập; các tab thư mục được giữ nguyên.",
+            "login_again": "Đăng nhập lại SSO"
+        },
         "workspace": {
+            "protocol_not_supported": "API đồng bộ workspace trả lỗi không tìm thấy (404). Cần cập nhật dịch vụ terminal hoặc cấu hình route phía server trước khi đồng bộ và mở terminal.",
             "unknown": "Cần kiểm tra workspace trước khi đồng bộ.",
             "checking": "Đang kiểm tra workspace và phiên…",
             "synced": "Workspace và phiên đã đồng bộ.",
@@ -1232,7 +1237,9 @@
             "connecting": "Đang kết nối SSH...",
             "connected": "Đã kết nối",
             "disconnected": "Đã ngắt kết nối",
-            "error": "Lỗi"
+            "error": "Lỗi",
+            "remote_connected": "Đã kết nối tới máy chủ remote.",
+            "remote_disconnected": "Không có kết nối tới máy chủ remote. Không thể đồng bộ file và user lên server."
         },
         "toast": {
             "login_failed": "Đăng nhập SSO thất bại",
@@ -1245,17 +1252,20 @@
         "choose_folder_button": "Chọn thư mục",
         "sync_now_button": "Đồng bộ ngay",
         "sync": {
+            "new_project": "Dự án mới chưa đồng bộ. Bấm Codex hoặc Claude để tự đồng bộ workspace trống lên server rồi mở terminal.",
+            "synced": "Đã đồng bộ file lên server",
             "idle": "Chưa đồng bộ",
             "syncing": "Đang đồng bộ...",
             "synced_ago": "Đã đồng bộ {{time}} trước",
             "failed": "Đồng bộ thất bại",
             "no_directory": "Vui lòng chọn thư mục làm việc cục bộ trước",
-            "pick_before_connect": "Chọn thư mục làm việc cục bộ để đồng bộ trước khi kết nối"
+            "pick_before_connect": "Chọn thư mục làm việc cục bộ để đồng bộ trước khi kết nối",
+            "files_required": "Chưa đồng bộ file lên server nên chưa thể đồng bộ user hoặc mở terminal. Hãy bấm Đồng bộ ngay trước."
         },
         "add_folder_button": "Thêm thư mục",
         "close_folder_tooltip": "Đóng tab thư mục",
         "confirm_close_folder": "Thư mục này đang có terminal chạy. Đóng và dừng tất cả?",
-        "empty_state_add_folder": "Thêm một thư mục để đồng bộ lên máy chủ từ xa và bắt đầu một terminal.",
+        "empty_state_add_folder": "Thêm thư mục trống để tạo dự án mới, đồng bộ lên server rồi mở terminal.",
         "terminal_tab_label": "Terminal {{index}}",
         "terminal_closed_badge": "đã đóng",
         "share_terminal_button": "Chia sẻ",
@@ -1269,6 +1279,8 @@
         "tool": {
             "codex": "Codex",
             "claude": "Claude Code"
-        }
+        },
+        "empty_folder_hint": "Chọn thư mục trống để tạo dự án mới",
+        "empty_folder_required": "Chỉ được thêm thư mục trống để tạo dự án mới. Thư mục đã chọn có file hoặc thư mục con (kể cả file ẩn)."
     }
 }

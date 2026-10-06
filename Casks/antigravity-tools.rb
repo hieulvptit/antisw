@@ -1,5 +1,5 @@
 cask "antigravity-tools" do
-  version "5.1.3"
+  version "5.2.0"
   sha256 :no_check
 
   name "Antigravity Switcher"

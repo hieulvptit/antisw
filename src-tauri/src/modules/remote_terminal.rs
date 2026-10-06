@@ -641,6 +641,7 @@ pub async fn start_login(app_handle: AppHandle) -> AppResult<()> {
                     // instead of wiping them - `restore_session` reconciles
                     // them against this new connection right after.
                     persist_connection(&info);
+                    crate::modules::remote_terminal_http::invalidate_app_token();
                     if let Ok(mut lock) = login_state().lock() {
                         *lock = None;
                     }
@@ -707,6 +708,43 @@ fn get_connection_info() -> AppResult<ConnectionInfo> {
 // Folder tabs
 // ============================================================================
 
+fn validate_empty_project_folder(path: &std::path::Path) -> AppResult<()> {
+    let mut entries = std::fs::read_dir(path)
+        .map_err(|e| AppError::RemoteTerminal(format!("local_dir_unreadable: {}", e)))?;
+    if let Some(entry) = entries.next() {
+        entry.map_err(|e| AppError::RemoteTerminal(format!("local_dir_unreadable: {}", e)))?;
+        return Err(AppError::RemoteTerminal("local_dir_not_empty_new_project_required".into()));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod new_project_folder_tests {
+    use super::validate_empty_project_folder;
+
+    #[test]
+    fn accepts_only_empty_folders_including_hidden_entries() {
+        let path = std::env::temp_dir().join(format!("remote-project-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&path).unwrap();
+        assert!(validate_empty_project_folder(&path).is_ok());
+
+        let hidden = path.join(".gitignore");
+        std::fs::write(&hidden, "").unwrap();
+        assert!(validate_empty_project_folder(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("local_dir_not_empty_new_project_required"));
+        std::fs::remove_file(hidden).unwrap();
+
+        let subfolder = path.join("project");
+        std::fs::create_dir(&subfolder).unwrap();
+        assert!(validate_empty_project_folder(&path).is_err());
+        std::fs::remove_dir(subfolder).unwrap();
+        std::fs::remove_dir(&path).unwrap();
+        assert!(validate_empty_project_folder(&path).is_err());
+    }
+}
+
 /// Register a new folder tab (validates the directory and derives its
 /// slug). Does not sync automatically and does not open a terminal - callers
 /// do that separately.
@@ -723,6 +761,7 @@ pub fn add_folder(local_dir: String) -> AppResult<AddFolderResult> {
         )));
     }
 
+    validate_empty_project_folder(path)?;
     let slug = derive_slug(&local_dir);
     let tab_id = uuid::Uuid::new_v4().to_string();
 
@@ -1157,6 +1196,26 @@ pub async fn open_terminal(
     cols: u16,
     rows: u16,
 ) -> AppResult<String> {
+    validate_tool(&tool)?;
+    let persisted = load_persisted_state();
+    if !persisted.folders.iter().any(|f| f.tab_id == tab_id && f.baseline_fingerprint.is_some()) {
+        // New projects have nothing to upload yet, but still need a real
+        // server sync receipt before a terminal can use their workspace.
+        // Recheck emptiness: files may have been added since Add folder.
+        let local_dir = folders()
+            .lock()
+            .map_err(|_| AppError::RemoteTerminal("folders_state_lock_poisoned".into()))?
+            .get(&tab_id)
+            .ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?
+            .local_dir.clone();
+        validate_empty_project_folder(std::path::Path::new(&local_dir))
+            .map_err(|_| AppError::RemoteTerminal("workspace_files_not_synced_user_sync_unavailable".into()))?;
+        sync_folder(app_handle.clone(), tab_id.clone()).await?;
+    }
+    let workspace = check_workspace(tab_id.clone()).await?;
+    if workspace.status != "synced" {
+        return Err(AppError::RemoteTerminal(format!("workspace_not_synced: {}", workspace.status)));
+    }
     let terminal_id = uuid::Uuid::new_v4().to_string();
     open_terminal_inner(app_handle, tab_id, tool, terminal_id, cols, rows).await
 }
@@ -1446,6 +1505,7 @@ pub struct RestoredFolder {
     pub tab_id: String,
     pub local_dir: String,
     pub slug: String,
+    pub files_synced: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1587,7 +1647,12 @@ pub async fn restore_session(app_handle: AppHandle) -> AppResult<Option<Restored
             .folders
             .into_iter()
             .filter(|f| lock.contains_key(&f.tab_id))
-            .map(|f| RestoredFolder { tab_id: f.tab_id, local_dir: f.local_dir, slug: f.slug })
+            .map(|f| RestoredFolder {
+                files_synced: f.baseline_fingerprint.is_some(),
+                tab_id: f.tab_id,
+                local_dir: f.local_dir,
+                slug: f.slug,
+            })
             .collect()
     };
 
@@ -1601,4 +1666,3 @@ pub async fn restore_session(app_handle: AppHandle) -> AppResult<Option<Restored
         terminals: restored_terminals,
     }))
 }
-
