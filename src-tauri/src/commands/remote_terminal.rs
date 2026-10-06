@@ -47,6 +47,16 @@ pub async fn remote_terminal_sync_folder(app_handle: tauri::AppHandle, tab_id: S
     remote_terminal::sync_folder(app_handle, tab_id).await
 }
 
+#[tauri::command]
+pub async fn remote_terminal_check_workspace(tab_id: String) -> AppResult<crate::modules::remote_workspace_sync::WorkspaceStatus> {
+    remote_terminal::check_workspace(tab_id).await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_download_folder(app_handle: tauri::AppHandle, tab_id: String) -> AppResult<()> {
+    remote_terminal::download_folder(app_handle, tab_id).await
+}
+
 /// Create a remote tmux session scoped to a folder tab's slug and a chosen
 /// remote CLI (`"codex"` or `"claude"`), then attach to it over HTTPS/SSE and
 /// start streaming its output to the frontend. `cols`/`rows` should be the

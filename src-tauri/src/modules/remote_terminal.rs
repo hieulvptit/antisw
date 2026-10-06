@@ -167,6 +167,12 @@ struct PersistedFolder {
     tab_id: String,
     local_dir: String,
     slug: String,
+    #[serde(default)]
+    session_version: u64,
+    #[serde(default)]
+    sync_revision: u64,
+    #[serde(default)]
+    baseline_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,25 +244,28 @@ fn load_persisted_state() -> PersistedState {
     serde_json::from_str(&raw).unwrap_or_default()
 }
 
+static PERSISTED_STATE_LOCK: Mutex<()> = Mutex::new(());
+
+fn write_persisted_state(state: &PersistedState) -> AppResult<()> {
+    let path = session_file_path()?;
+    let temp = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    let json = serde_json::to_vec_pretty(state).map_err(|e| AppError::RemoteTerminal(e.to_string()))?;
+    std::fs::write(&temp, json)?;
+    if let Err(e) = std::fs::rename(&temp, &path) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e.into());
+    }
+    Ok(())
+}
+
 fn save_persisted_state(state: &PersistedState) {
-    let Ok(path) = session_file_path() else { return };
-    match serde_json::to_string_pretty(state) {
-        Ok(json) => {
-            if let Err(e) = std::fs::write(&path, json) {
-                crate::modules::logger::log_error(&format!(
-                    "remote_terminal: failed to persist session state: {}",
-                    e
-                ));
-            }
-        }
-        Err(e) => crate::modules::logger::log_error(&format!(
-            "remote_terminal: failed to serialize session state: {}",
-            e
-        )),
+    if let Err(e) = write_persisted_state(state) {
+        crate::modules::logger::log_error(&format!("remote_terminal: failed to persist session state: {}", e));
     }
 }
 
 fn persist_connection(info: &ConnectionInfo) {
+    let Ok(_guard) = PERSISTED_STATE_LOCK.lock() else { return };
     let mut state = load_persisted_state();
     state.connection = Some(PersistedConnection {
         priv_key_path: info.priv_key_path.clone(),
@@ -269,12 +278,16 @@ fn persist_connection(info: &ConnectionInfo) {
 }
 
 fn persist_add_folder(tab_id: &str, local_dir: &str, slug: &str) {
+    let Ok(_guard) = PERSISTED_STATE_LOCK.lock() else { return };
     let mut state = load_persisted_state();
     state.folders.retain(|f| f.tab_id != tab_id);
     state.folders.push(PersistedFolder {
         tab_id: tab_id.to_string(),
         local_dir: local_dir.to_string(),
         slug: slug.to_string(),
+        session_version: 0,
+        sync_revision: 0,
+        baseline_fingerprint: None,
     });
     save_persisted_state(&state);
 }
@@ -283,6 +296,7 @@ fn persist_add_folder(tab_id: &str, local_dir: &str, slug: &str) {
 /// disconnected earlier and are no longer tracked in the in-memory
 /// `FolderTab.terminals` list) - closing a folder means forgetting it.
 fn persist_remove_folder(tab_id: &str) {
+    let Ok(_guard) = PERSISTED_STATE_LOCK.lock() else { return };
     let mut state = load_persisted_state();
     state.folders.retain(|f| f.tab_id != tab_id);
     state.terminals.retain(|t| t.tab_id != tab_id);
@@ -290,6 +304,7 @@ fn persist_remove_folder(tab_id: &str) {
 }
 
 fn persist_add_terminal(terminal_id: &str, tab_id: &str, tool: &str) {
+    let Ok(_guard) = PERSISTED_STATE_LOCK.lock() else { return };
     let mut state = load_persisted_state();
     state.terminals.retain(|t| t.terminal_id != terminal_id);
     state.terminals.push(PersistedTerminal {
@@ -301,6 +316,7 @@ fn persist_add_terminal(terminal_id: &str, tab_id: &str, tool: &str) {
 }
 
 fn persist_remove_terminal(terminal_id: &str) {
+    let Ok(_guard) = PERSISTED_STATE_LOCK.lock() else { return };
     let mut state = load_persisted_state();
     state.terminals.retain(|t| t.terminal_id != terminal_id);
     save_persisted_state(&state);
@@ -842,7 +858,78 @@ fn resolve_rsync_binary() -> AppResult<String> {
 /// transport below) and delegates it to `rrsync`, confined to this
 /// account's workspace root - no special handling is needed on this end
 /// beyond pointing at the right relative destination path.
+static WORKSPACE_SESSION_ID: OnceLock<String> = OnceLock::new();
+static WORKSPACE_OPERATIONS: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+async fn workspace_body(tab_id: &str) -> AppResult<serde_json::Value> {
+    let (local_dir, slug) = {
+        let lock = folders().lock().map_err(|_| AppError::RemoteTerminal("folders_state_lock_poisoned".into()))?;
+        let tab = lock.get(tab_id).ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?;
+        (tab.local_dir.clone(), tab.slug.clone())
+    };
+    let info = get_connection_info()?;
+    let client_id = crate::modules::tracking::get_device_id().map_err(AppError::RemoteTerminal)?;
+    let session_id = WORKSPACE_SESSION_ID.get_or_init(|| uuid::Uuid::new_v4().to_string()).clone();
+    let baseline = load_persisted_state().folders.into_iter().find(|f| f.tab_id == tab_id);
+    let (fingerprint, git) = tokio::task::spawn_blocking(move || {
+        let dir = std::path::Path::new(&local_dir);
+        Ok::<_, AppError>((crate::modules::remote_workspace_sync::fingerprint(dir)?, crate::modules::remote_workspace_sync::git_state(dir)?))
+    }).await.map_err(|e| AppError::RemoteTerminal(e.to_string()))??;
+    Ok(serde_json::json!({
+        "folder": info.principal, "slug": slug, "client_id": client_id, "session_id": session_id,
+        "session_version": baseline.as_ref().map(|f| f.session_version).unwrap_or(0),
+        "sync_revision": baseline.as_ref().map(|f| f.sync_revision).unwrap_or(0),
+        "baseline_fingerprint": baseline.and_then(|f| f.baseline_fingerprint),
+        "fingerprint": fingerprint, "git": git,
+    }))
+}
+
+pub async fn check_workspace(tab_id: String) -> AppResult<crate::modules::remote_workspace_sync::WorkspaceStatus> {
+    // Serializes checks against receipt persistence, including multiple folders.
+    let _guard = WORKSPACE_OPERATIONS.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
+    let body = workspace_body(&tab_id).await?;
+    let info = get_connection_info()?;
+    let response = crate::modules::remote_terminal_http::workspace_request(&info.priv_key_path, &info.ssh_user, "check", &body).await?;
+    serde_json::from_value(response).map_err(|e| AppError::RemoteTerminal(format!("workspace_response_invalid: {}", e)))
+}
+
 pub async fn sync_folder(app_handle: AppHandle, tab_id: String) -> AppResult<()> {
+    sync_folder_direction(app_handle, tab_id, false).await
+}
+
+pub async fn download_folder(app_handle: AppHandle, tab_id: String) -> AppResult<()> {
+    sync_folder_direction(app_handle, tab_id, true).await
+}
+
+fn persist_workspace_receipt(tab_id: &str, receipt: &serde_json::Value) -> AppResult<()> {
+    let _guard = PERSISTED_STATE_LOCK.lock().map_err(|_| AppError::RemoteTerminal("session_state_lock_poisoned".into()))?;
+    let version = receipt["session_version"].as_u64().ok_or_else(|| AppError::RemoteTerminal("invalid_sync_receipt".into()))?;
+    let revision = receipt["sync_revision"].as_u64().ok_or_else(|| AppError::RemoteTerminal("invalid_sync_receipt".into()))?;
+    let fingerprint = receipt["fingerprint"].as_str().ok_or_else(|| AppError::RemoteTerminal("invalid_sync_receipt".into()))?.to_string();
+    let mut persisted = load_persisted_state();
+    let folder = persisted.folders.iter_mut().find(|f| f.tab_id == tab_id)
+        .ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?;
+    folder.session_version = version;
+    folder.sync_revision = revision;
+    folder.baseline_fingerprint = Some(fingerprint);
+    // A baseline is required for safe future downloads: persistence is not
+    // best-effort here, unlike cosmetic terminal restoration metadata.
+    write_persisted_state(&persisted)
+}
+
+async fn sync_folder_direction(app_handle: AppHandle, tab_id: String, download: bool) -> AppResult<()> {
+    let _guard = WORKSPACE_OPERATIONS.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
+    let mut body = workspace_body(&tab_id).await?;
+    body["direction"] = serde_json::json!(if download { "download" } else { "upload" });
+    let connection = get_connection_info()?;
+    let prepared = crate::modules::remote_terminal_http::workspace_request(&connection.priv_key_path, &connection.ssh_user, "prepare", &body).await?;
+    if !prepared["receipt"].is_null() {
+        persist_workspace_receipt(&tab_id, &prepared["receipt"])?;
+        return Ok(());
+    }
+    let ticket = prepared["ticket"].as_str().filter(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or_else(|| AppError::RemoteTerminal("invalid_sync_ticket".into()))?.to_string();
+
     let (local_dir, slug) = {
         let lock = folders()
             .lock()
@@ -866,7 +953,7 @@ pub async fn sync_folder(app_handle: AppHandle, tab_id: String) -> AppResult<()>
 
     let ssh_opts = format!(
         "ssh -i {} -o StrictHostKeyChecking=accept-new -o BatchMode=yes",
-        info.priv_key_path.display()
+        format!("'{}'", info.priv_key_path.display().to_string().replace('\'', "'\"'\"'"))
     );
 
     // A trailing slash on the source means "copy the CONTENTS of local_dir"
@@ -899,18 +986,21 @@ pub async fn sync_folder(app_handle: AppHandle, tab_id: String) -> AppResult<()>
     );
 
     let mut child = tokio::process::Command::new(&rsync_binary)
-        .arg("-az")
+        .arg("-azc")
         .arg("--delete")
+        .arg("--rsync-path")
+        .arg(format!("workspace-sync {}", ticket))
         // Total-transfer percentage (rsync 3.1+), so the UI can show real
         // progress instead of a spinner with no end in sight. Note it reports
         // progress with CARRIAGE RETURNS, not newlines - see the reader below.
         .arg("--info=progress2")
         .arg("-e")
         .arg(&ssh_opts)
-        .arg(&source)
-        .arg(&destination)
+        .arg(if download { &destination } else { &source })
+        .arg(if download { &source } else { &destination })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -1008,6 +1098,15 @@ pub async fn sync_folder(app_handle: AppHandle, tab_id: String) -> AppResult<()>
     let stderr_output = stderr_task.await.unwrap_or_default();
 
     if status.success() {
+        body["ticket"] = serde_json::json!(ticket);
+        let receipt = crate::modules::remote_terminal_http::workspace_request(&info.priv_key_path, &info.ssh_user, "result", &body).await?;
+        let fingerprint = receipt["fingerprint"].as_str().ok_or_else(|| AppError::RemoteTerminal("invalid_sync_receipt".into()))?.to_string();
+        // A pull interrupted by a remote editor must never establish a baseline.
+        let actual = workspace_body(&tab_id).await?;
+        if download && (actual["fingerprint"].as_str() != Some(&fingerprint) || actual["git"]["head"] != receipt["head"]) {
+            return Err(AppError::RemoteTerminal("workspace_changed_during_download".into()));
+        }
+        persist_workspace_receipt(&tab_id, &receipt)?;
         crate::modules::logger::log_info(&format!(
             "remote_terminal: workspace sync completed successfully for tab {} (slug={})",
             tab_id, slug

@@ -579,6 +579,8 @@ pub fn run() {
             commands::remote_terminal::remote_terminal_add_folder,
             commands::remote_terminal::remote_terminal_close_folder,
             commands::remote_terminal::remote_terminal_sync_folder,
+            commands::remote_terminal::remote_terminal_check_workspace,
+            commands::remote_terminal::remote_terminal_download_folder,
             commands::remote_terminal::remote_terminal_open_terminal,
             commands::remote_terminal::remote_terminal_list_tools,
             commands::remote_terminal::remote_terminal_write,

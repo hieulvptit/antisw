@@ -14,13 +14,20 @@ import '@xterm/xterm/css/xterm.css';
 import { request as invoke } from '../utils/request';
 import { showToast } from '../components/common/ToastContainer';
 import { isTauri } from '../utils/env';
-import { useRemoteTerminalStore, RemoteTerminalReady, RemoteTool } from '../stores/useRemoteTerminalStore';
+import { useRemoteTerminalStore, RemoteTerminalReady, RemoteTool, WorkspaceStatus } from '../stores/useRemoteTerminalStore';
 import { installImeInput } from '../utils/xtermImeInput';
 import { debugState, escapeForLog, installDebugSwitches, record } from '../utils/remoteTerminalDebug';
 
 interface AddFolderResult {
     tab_id: string;
     slug: string;
+}
+
+interface WorkspaceCheckPayload {
+    status: Exclude<WorkspaceStatus, 'unknown' | 'checking' | 'error'>;
+    client_id: string | null;
+    session_version: number;
+    sync_revision: number;
 }
 
 interface SyncOutputPayload {
@@ -838,18 +845,66 @@ function RemoteTerminal() {
         removeFolder(tabId);
     };
 
-    const handleSyncFolder = useCallback(async (tabId: string): Promise<boolean> => {
+    const checkInFlightRef = useRef(new Map<string, Promise<WorkspaceCheckPayload | null>>());
+    const checkWorkspace = useCallback((tabId: string): Promise<WorkspaceCheckPayload | null> => {
+        const existing = checkInFlightRef.current.get(tabId);
+        if (existing) return existing;
+        const current = useRemoteTerminalStore.getState().folders[tabId];
+        if (!current || current.syncStatus === 'syncing') return Promise.resolve(null);
+        updateFolderSync(tabId, { workspaceStatus: 'checking', workspaceError: null });
+        const promise = invoke<WorkspaceCheckPayload>('remote_terminal_check_workspace', { tabId })
+            .then((result) => {
+                if (useRemoteTerminalStore.getState().folders[tabId]?.syncStatus !== 'syncing') {
+                    updateFolderSync(tabId, { workspaceStatus: result.status, workspaceError: null });
+                }
+                return result;
+            })
+            .catch((e) => {
+                if (useRemoteTerminalStore.getState().folders[tabId]?.syncStatus !== 'syncing') {
+                    updateFolderSync(tabId, { workspaceStatus: 'error', workspaceError: String(e) });
+                }
+                return null;
+            })
+            .finally(() => checkInFlightRef.current.delete(tabId));
+        checkInFlightRef.current.set(tabId, promise);
+        return promise;
+    }, [updateFolderSync]);
+
+    const folderIdsKey = folderOrder.join(',');
+    useEffect(() => {
+        if (loginStatus !== 'logged_in') return;
+        const checkAll = async () => {
+            if (document.visibilityState === 'hidden') return;
+            for (const id of useRemoteTerminalStore.getState().folderOrder) await checkWorkspace(id);
+        };
+        void checkAll();
+        const interval = setInterval(() => void checkAll(), 60000);
+        const onVisible = () => { if (document.visibilityState === 'visible') void checkAll(); };
+        window.addEventListener('focus', onVisible);
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('focus', onVisible);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [loginStatus, folderIdsKey, checkWorkspace]);
+
+    const handleSyncFolder = useCallback(async (tabId: string, download = false): Promise<boolean> => {
+        await checkInFlightRef.current.get(tabId);
+        if (useRemoteTerminalStore.getState().folders[tabId]?.syncStatus === 'syncing') return false;
         updateFolderSync(tabId, { syncStatus: 'syncing', syncMessage: null, syncOutputLine: null });
+        let success = false;
         try {
-            await invoke('remote_terminal_sync_folder', { tabId });
+            await invoke(download ? 'remote_terminal_download_folder' : 'remote_terminal_sync_folder', { tabId });
             updateFolderSync(tabId, { syncStatus: 'synced', syncMessage: null, lastSyncedAt: Date.now() });
-            return true;
+            success = true;
         } catch (e) {
             updateFolderSync(tabId, { syncStatus: 'error', syncMessage: String(e) });
             showToast(t('remote_terminal.toast.sync_failed'), 'error');
-            return false;
         }
-    }, [t, updateFolderSync]);
+        await checkWorkspace(tabId);
+        return success;
+    }, [t, updateFolderSync, checkWorkspace]);
 
     // Measure the real terminal size BEFORE the PTY is opened, using a
     // throwaway xterm.js instance (same font metrics as the real terminals)
@@ -1108,6 +1163,19 @@ function RemoteTerminal() {
                                 could not repaint fast enough and the screen
                                 ended up blank. Nothing about a status message
                                 is allowed to move the terminal. */}
+                            <div className="shrink-0 flex items-center gap-3 min-h-16 rounded-xl border border-gray-200 dark:border-base-200 px-4 py-2" role="status" aria-live="polite">
+                                <span className={`text-xs flex-1 ${['download_required', 'commit_required', 'conflict', 'error'].includes(activeTab.workspaceStatus) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'}`} title={activeTab.workspaceError || undefined}>
+                                    {t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)}
+                                </span>
+                                {activeTab.workspaceStatus === 'download_required' && (
+                                    <button onClick={() => handleSyncFolder(activeTab.tabId, true)} disabled={activeTab.syncStatus === 'syncing'} className="text-xs rounded-full bg-blue-600 text-white px-3 py-1.5 disabled:opacity-40">
+                                        {t('remote_terminal.workspace.download_button')}
+                                    </button>
+                                )}
+                                <button onClick={() => checkWorkspace(activeTab.tabId)} disabled={activeTab.workspaceStatus === 'checking' || activeTab.syncStatus === 'syncing'} className="text-xs rounded-full bg-gray-100 dark:bg-base-200 px-3 py-1.5 disabled:opacity-40">
+                                    {t('remote_terminal.workspace.check_button')}
+                                </button>
+                            </div>
                             <div className="shrink-0 flex items-center gap-3 bg-white dark:bg-base-100 border border-gray-200 dark:border-base-200 rounded-xl px-4 py-3">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
                                     <FolderOpen className="w-4 h-4 text-gray-400 shrink-0" />
@@ -1121,7 +1189,7 @@ function RemoteTerminal() {
                                 </div>
                                 <button
                                     onClick={() => handleSyncFolder(activeTab.tabId)}
-                                    disabled={activeTab.syncStatus === 'syncing'}
+                                    disabled={activeTab.syncStatus === 'syncing' || !['synced', 'upload_required'].includes(activeTab.workspaceStatus)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                                 >
                                     <RefreshCw className={`w-3.5 h-3.5 ${activeTab.syncStatus === 'syncing' ? 'animate-spin' : ''}`} />

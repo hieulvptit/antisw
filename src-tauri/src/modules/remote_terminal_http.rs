@@ -395,6 +395,33 @@ fn invalidate_app_token() {
     }
 }
 
+/// Authenticated workspace control calls. Never fall back to unguarded SSH
+/// when the server is unavailable or predates the workspace protocol.
+pub async fn workspace_request(priv_key_path: &Path, ssh_user: &str, action: &str, body: &serde_json::Value) -> AppResult<serde_json::Value> {
+    refresh_route_cached().await;
+    for attempt in 0..2 {
+        let token = ensure_app_token(priv_key_path, ssh_user).await?;
+        let response = client().post(format!("{}/term/workspace/{}", base_url(), action))
+            .timeout(Duration::from_secs(120)).bearer_auth(token).json(body).send().await
+            .map_err(|e| AppError::RemoteTerminal(format!("workspace_check_unavailable: {}", e)))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
+            invalidate_app_token();
+            continue;
+        }
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(AppError::RemoteTerminal("workspace_protocol_not_supported".into()));
+        }
+        let parsed: serde_json::Value = response.json().await
+            .map_err(|e| AppError::RemoteTerminal(format!("workspace_response_invalid: {}", e)))?;
+        if !status.is_success() {
+            return Err(AppError::RemoteTerminal(parsed["error"].as_str().unwrap_or("workspace_check_unavailable").to_string()));
+        }
+        return Ok(parsed);
+    }
+    Err(AppError::RemoteTerminal("workspace_check_unauthorized".into()))
+}
+
 /// Trade the app token for a per-terminal session token.
 ///
 /// `cols`/`rows` are sent here rather than as a follow-up `/term/resize`:

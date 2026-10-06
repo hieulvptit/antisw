@@ -1203,6 +1203,18 @@
         "hint_curfew": "Để trống để tắt. Dựa trên giờ máy chủ."
     },
     "remote_terminal": {
+        "workspace": {
+            "unknown": "Cần kiểm tra workspace trước khi đồng bộ.",
+            "checking": "Đang kiểm tra workspace và phiên…",
+            "synced": "Workspace và phiên đã đồng bộ.",
+            "upload_required": "Có thay đổi local cần đồng bộ lên server.",
+            "download_required": "Server hoặc phiên đã thay đổi. Cần đồng bộ về máy trước khi tải lên.",
+            "commit_required": "Workspace thuộc client khác. Hãy commit và push thay đổi ở cả hai client trước khi đồng bộ.",
+            "conflict": "Local và server có thay đổi xung đột. Hãy commit, push và đối chiếu với server trước khi đồng bộ.",
+            "error": "Chưa xác minh được workspace. Kiểm tra kết nối rồi thử lại; server có thể cần cập nhật.",
+            "download_button": "Đồng bộ về máy",
+            "check_button": "Kiểm tra lại"
+        },
         "login_button": "Đăng nhập SSO",
         "login_button_loading": "Đang chờ đăng nhập SSO...",
         "connect_button": "Kết nối",

@@ -1396,6 +1396,18 @@
         "hint_curfew": "Leave empty to disable. Based on server time."
     },
     "remote_terminal": {
+        "workspace": {
+            "unknown": "Workspace needs to be checked before syncing.",
+            "checking": "Checking workspace and session…",
+            "synced": "Workspace and session are up to date.",
+            "upload_required": "Local changes need to be synced to the server.",
+            "download_required": "The server or session has changed. Sync from the server before uploading.",
+            "commit_required": "This workspace belongs to another client. Commit and push changes on both clients before syncing.",
+            "conflict": "Local and remote changes conflict. Commit and push local changes, then reconcile with the server before syncing.",
+            "error": "Could not verify the workspace. Check the connection and retry; the server may need updating.",
+            "download_button": "Sync from server",
+            "check_button": "Check again"
+        },
         "login_button": "Sign in with SSO",
         "login_button_loading": "Waiting for SSO login...",
         "connect_button": "Connect",

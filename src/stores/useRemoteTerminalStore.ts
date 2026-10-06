@@ -4,6 +4,7 @@ import { create } from 'zustand';
 export type LoginStatus = 'idle' | 'waiting_sso' | 'logged_in' | 'error';
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
+export type WorkspaceStatus = 'unknown' | 'checking' | 'synced' | 'upload_required' | 'download_required' | 'commit_required' | 'conflict' | 'error';
 export type TerminalStatus = 'connecting' | 'connected' | 'closed' | 'error';
 
 /** Which remote CLI a terminal runs. Validated again server-side, but the
@@ -28,6 +29,8 @@ export interface FolderTabState {
     syncMessage: string | null;
     syncOutputLine: string | null;
     lastSyncedAt: number | null;
+    workspaceStatus: WorkspaceStatus;
+    workspaceError: string | null;
     terminalIds: string[];
     activeTerminalId: string | null;
 }
@@ -97,7 +100,7 @@ interface RemoteTerminalState {
     setActiveTab: (tabId: string | null) => void;
     updateFolderSync: (
         tabId: string,
-        patch: Partial<Pick<FolderTabState, 'syncStatus' | 'syncMessage' | 'syncOutputLine' | 'lastSyncedAt'>>,
+        patch: Partial<Pick<FolderTabState, 'syncStatus' | 'syncMessage' | 'syncOutputLine' | 'lastSyncedAt' | 'workspaceStatus' | 'workspaceError'>>,
     ) => void;
 
     addTerminal: (terminalId: string, tabId: string, tool: RemoteTool) => void;
@@ -156,6 +159,8 @@ export const useRemoteTerminalStore = create<RemoteTerminalState>((set) => ({
                 syncMessage: null,
                 syncOutputLine: null,
                 lastSyncedAt: null,
+                workspaceStatus: 'unknown',
+                workspaceError: null,
                 terminalIds: [],
                 activeTerminalId: null,
             },
