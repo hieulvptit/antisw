@@ -175,3 +175,8 @@ pub async fn remote_terminal_save_git_credentials(credential: serde_json::Value)
 pub async fn remote_terminal_import_git(repo_url: String, tool: String) -> AppResult<serde_json::Value> {
     remote_terminal::import_git_repository(repo_url, tool).await
 }
+
+#[tauri::command]
+pub async fn remote_terminal_push_git(terminal_id: String, repo_url: String) -> AppResult<()> {
+    remote_terminal::push_git_repository(terminal_id, repo_url).await
+}

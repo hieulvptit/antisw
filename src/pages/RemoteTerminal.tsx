@@ -5,7 +5,7 @@ import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
     LogIn, Loader2, Terminal as TerminalIcon, XCircle,
-    FolderOpen, RefreshCw, Plus, X, Share2, Pencil, GitBranch,
+    FolderOpen, RefreshCw, Plus, X, Share2, Pencil, GitBranch, GitCommitVertical,
 } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -124,6 +124,8 @@ function RemoteTerminal() {
     } = useRemoteTerminalStore();
 
     const [gitImportOpen, setGitImportOpen] = useState(false);
+    const [gitPushTerminalId, setGitPushTerminalId] = useState<string | null>(null);
+    const gitRepoUrlsRef = useRef(new Map<string, string>());
     const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [isSharing, setIsSharing] = useState(false);
     const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
@@ -909,6 +911,7 @@ function RemoteTerminal() {
     };
 
     const handleGitImported = async (result: GitImportResult) => {
+        if (result.repo_url) gitRepoUrlsRef.current.set(result.terminal_id, result.repo_url);
         showToast(t('remote_terminal.git.success'), 'success');
         try {
             const session = await invoke<RestoredSessionPayload | null>('remote_terminal_refresh_sessions');
@@ -1409,6 +1412,15 @@ function RemoteTerminal() {
                                     {t('remote_terminal.sync_now_button')}
                                 </button>
                                 <button
+                                    onClick={() => setGitPushTerminalId(activeTab.activeTerminalId)}
+                                    disabled={!activeTab.activeTerminalId || authRequired || activeTab.syncStatus === 'syncing'}
+                                    title={t('remote_terminal.git.push_description')}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                                >
+                                    <GitCommitVertical className="w-3.5 h-3.5" />
+                                    {t('remote_terminal.git.push_button')}
+                                </button>
+                                <button
                                     onClick={() => handleShareTerminal(activeTab.activeTerminalId!)}
                                     disabled={!activeTab.activeTerminalId || isSharing}
                                     title={t('remote_terminal.share_terminal_tooltip')}
@@ -1533,6 +1545,11 @@ function RemoteTerminal() {
             )}
             <GitImportModal open={gitImportOpen} tools={availableTools} onClose={() => setGitImportOpen(false)}
                 onImported={handleGitImported} describeError={describeRemoteError} />
+            <GitImportModal open={gitPushTerminalId !== null} terminalId={gitPushTerminalId || undefined}
+                initialRepoUrl={gitRepoUrlsRef.current.get(gitPushTerminalId || '') || ''}
+                tools={availableTools} onClose={() => setGitPushTerminalId(null)}
+                onImported={handleGitImported} onPushed={() => showToast(t('remote_terminal.git.push_success'), 'success')}
+                describeError={describeRemoteError} />
             <Modal
                 open={syncChoiceTabId !== null && !!folders[syncChoiceTabId]}
                 title={t('remote_terminal.workspace.download_title')}

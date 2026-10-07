@@ -580,6 +580,7 @@ pub fn run() {
             commands::remote_terminal::remote_terminal_list_git_credentials,
             commands::remote_terminal::remote_terminal_save_git_credentials,
             commands::remote_terminal::remote_terminal_import_git,
+            commands::remote_terminal::remote_terminal_push_git,
             commands::remote_terminal::remote_terminal_close_folder,
             commands::remote_terminal::remote_terminal_sync_folder,
             commands::remote_terminal::remote_terminal_check_workspace,

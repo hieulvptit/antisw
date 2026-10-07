@@ -60,12 +60,13 @@
      if (!body || !/^[a-zA-Z0-9_-]{1,64}$/.test(body.terminal_id || '') || !['clone', 'pull', 'push'].includes(operation)) fail('invalid_git_operation', 400);
 --- a/ssh_broker/git_credentials.js
 +++ b/ssh_broker/git_credentials.js
-@@ -6,7 +6,7 @@
+@@ -6,7 +6,8 @@
  const { fail } = require('./terminal_registry');
  
  function hosts(env = process.env) {
 -  return (env.GIT_ALLOWED_HOSTS || 'github.com,gitlab.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-+  return (env.GIT_ALLOWED_HOSTS || 'git.vnpay.vn,github.com,gitlab.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
++  const configured = (env.GIT_ALLOWED_HOSTS || 'github.com,gitlab.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
++  return [...new Set(['git.vnpay.vn', ...configured])];
  }
  function hostName(value, allowed) {
    if (typeof value !== 'string' || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(value) || !allowed.includes(value)) fail('git_host_not_allowed', 400);

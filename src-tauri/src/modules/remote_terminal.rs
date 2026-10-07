@@ -1473,6 +1473,16 @@ pub async fn import_git_repository(repo_url: String, tool: String) -> AppResult<
     ).await
 }
 
+pub async fn push_git_repository(terminal_id: String, repo_url: String) -> AppResult<()> {
+    let _guard = terminal_operations().lock().await;
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::git_request(
+        &info.priv_key_path, &info.ssh_user, reqwest::Method::POST, "push",
+        &serde_json::json!({ "terminal_id": terminal_id, "repo_url": repo_url }),
+    ).await?;
+    Ok(())
+}
+
 /// Which remote CLIs this server offers, so the UI only shows buttons for
 /// tools that actually exist there (claude is off by default server-side).
 pub async fn list_tools() -> AppResult<Vec<String>> {
