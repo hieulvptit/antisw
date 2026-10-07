@@ -308,11 +308,11 @@ pub async fn list_tools() -> AppResult<Vec<String>> {
 /// keypair was generated with) rather than pulling in a crypto crate to
 /// re-implement the SSH signature format.
 async fn sign_with_ssh_key(priv_key_path: &Path, data: &str) -> AppResult<String> {
-    let mut child = tokio::process::Command::new("ssh-keygen")
+    let mut child = crate::modules::remote_sync_tools::async_command("ssh-keygen")
         .arg("-Y")
         .arg("sign")
         .arg("-f")
-        .arg(priv_key_path)
+        .arg(crate::modules::remote_sync_tools::posix_path(priv_key_path))
         .arg("-n")
         .arg(SIGNATURE_NAMESPACE)
         .stdin(Stdio::piped())
@@ -460,11 +460,114 @@ pub async fn workspace_request(priv_key_path: &Path, ssh_user: &str, action: &st
     Err(AppError::RemoteTerminal("workspace_check_unauthorized".into()))
 }
 
+/// Git responses contain metadata/errors only; never log request bodies or PATs.
+pub async fn git_request(priv_key_path: &Path, ssh_user: &str, method: reqwest::Method, action: &str, body: &serde_json::Value) -> AppResult<serde_json::Value> {
+    refresh_route_cached().await;
+    for attempt in 0..2 {
+        let token = ensure_app_token(priv_key_path, ssh_user).await?;
+        let mut request = client().request(method.clone(), format!("{}/term/git/{}", base_url(), action))
+            .timeout(Duration::from_secs(150)).bearer_auth(token);
+        if method != reqwest::Method::GET { request = request.json(body); }
+        let response = request.send().await
+            .map_err(|_| AppError::RemoteTerminal("git_service_unavailable".into()))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
+            invalidate_app_token();
+            continue;
+        }
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AppError::RemoteTerminal("remote_terminal_auth_required".into()));
+        }
+        let parsed = response.json::<serde_json::Value>().await;
+        if status == reqwest::StatusCode::NOT_FOUND && parsed.as_ref().ok().and_then(|value| value["error"].as_str()).is_none() {
+            return Err(AppError::RemoteTerminal("git_protocol_not_supported".into()));
+        }
+        let parsed = parsed.map_err(|_| AppError::RemoteTerminal("git_response_invalid".into()))?;
+        if !status.is_success() {
+            return Err(AppError::RemoteTerminal(parsed["error"].as_str().unwrap_or("git_command_failed").into()));
+        }
+        return Ok(parsed);
+    }
+    Err(AppError::RemoteTerminal("remote_terminal_auth_required".into()))
+}
+
 fn workspace_not_found_error(error: Option<&str>) -> &str {
     match error {
         None | Some("" | "not_found" | "Not Found" | "route_not_found") => "workspace_protocol_not_supported",
         Some(error) => error,
     }
+}
+
+/// Account-scoped inventory, not the device's local cache. A missing route
+/// is distinct from an empty inventory and must never delete cached tabs.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AccountTerminal {
+    pub terminal_id: String,
+    pub slug: String,
+    pub tool: String,
+    #[serde(default)]
+    #[serde(rename = "label")]
+    pub title: Option<String>,
+    pub status: String,
+}
+
+pub async fn list_account_terminals(priv_key_path: &Path, ssh_user: &str) -> AppResult<Option<Vec<AccountTerminal>>> {
+    #[derive(serde::Deserialize)]
+    struct Inventory { terminals: Vec<AccountTerminal> }
+    refresh_route_cached().await;
+    for attempt in 0..2 {
+        let token = ensure_app_token(priv_key_path, ssh_user).await?;
+        let response = client().get(format!("{}/term/list", base_url()))
+            .timeout(CONTROL_TIMEOUT).bearer_auth(token).send().await
+            .map_err(|e| AppError::RemoteTerminal(format!("terminal_inventory_unavailable: {}", e)))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
+            invalidate_app_token();
+            continue;
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let inventory = response.error_for_status()
+            .map_err(|e| AppError::RemoteTerminal(format!("terminal_inventory_rejected: {}", e)))?
+            .json::<Inventory>().await
+            .map_err(|e| AppError::RemoteTerminal(format!("terminal_inventory_invalid: {}", e)))?;
+        // Validate the whole snapshot before reconciling any local state.
+        let mut ids = std::collections::HashSet::new();
+        for terminal in &inventory.terminals {
+            let id = &terminal.terminal_id;
+            let slug = &terminal.slug;
+            if id.is_empty() || id.len() > 64
+                || !id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+                || slug.is_empty() || slug.len() > 64
+                || !slug.bytes().next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                || !slug.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_' || c == b'-')
+                || !["codex", "claude"].contains(&terminal.tool.as_str())
+                || !["running", "exited"].contains(&terminal.status.as_str())
+                || !ids.insert(id.clone()) {
+                return Err(AppError::RemoteTerminal("terminal_inventory_invalid".into()));
+            }
+        }
+        return Ok(Some(inventory.terminals));
+    }
+    Err(AppError::RemoteTerminal("remote_terminal_auth_required".into()))
+}
+
+pub async fn rename_terminal(priv_key_path: &Path, ssh_user: &str, terminal_id: &str, label: &str) -> AppResult<()> {
+    refresh_route_cached().await;
+    for attempt in 0..2 {
+        let token = ensure_app_token(priv_key_path, ssh_user).await?;
+        let response = client().post(format!("{}/term/update", base_url()))
+            .timeout(CONTROL_TIMEOUT).bearer_auth(token)
+            .json(&serde_json::json!({ "terminal_id": terminal_id, "label": label }))
+            .send().await.map_err(|e| AppError::RemoteTerminal(format!("terminal_update_unavailable: {}", e)))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
+            invalidate_app_token();
+            continue;
+        }
+        response.error_for_status().map_err(|e| AppError::RemoteTerminal(format!("terminal_update_rejected: {}", e)))?;
+        return Ok(());
+    }
+    Err(AppError::RemoteTerminal("remote_terminal_auth_required".into()))
 }
 
 /// Trade the app token for a per-terminal session token.
@@ -929,22 +1032,28 @@ pub async fn create_share_group(
     Err(AppError::RemoteTerminal("share_group_unauthorized".to_string()))
 }
 
-/// End the remote tmux session. Best-effort, same as the SSH verb it replaces.
+/// End the remote session and require server acknowledgement before the
+/// desktop removes it, so a rejected close is not rediscovered on refresh.
 pub async fn kill_terminal(
     priv_key_path: &Path,
     ssh_user: &str,
     terminal_id: &str,
 ) -> AppResult<()> {
-    let app_token = ensure_app_token(priv_key_path, ssh_user).await?;
-    client()
-        .post(format!("{}/term/kill", base_url()))
-        .timeout(CONTROL_TIMEOUT)
-        .bearer_auth(&app_token)
-        .json(&serde_json::json!({ "terminal_id": terminal_id }))
-        .send()
-        .await
-        .map_err(|e| AppError::RemoteTerminal(format!("term_kill_request_failed: {}", e)))?;
-    Ok(())
+    refresh_route_cached().await;
+    for attempt in 0..2 {
+        let token = ensure_app_token(priv_key_path, ssh_user).await?;
+        let response = client().post(format!("{}/term/kill", base_url()))
+            .timeout(CONTROL_TIMEOUT).bearer_auth(token)
+            .json(&serde_json::json!({ "terminal_id": terminal_id }))
+            .send().await.map_err(|e| AppError::RemoteTerminal(format!("term_kill_request_failed: {}", e)))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED && attempt == 0 {
+            invalidate_app_token();
+            continue;
+        }
+        response.error_for_status().map_err(|e| AppError::RemoteTerminal(format!("term_kill_rejected: {}", e)))?;
+        return Ok(());
+    }
+    Err(AppError::RemoteTerminal("remote_terminal_auth_required".into()))
 }
 
 /// Attach to an already-running remote tmux session over HTTP and start
@@ -1190,7 +1299,7 @@ pub async fn reattach_terminal(
 pub fn is_attached(terminal_id: &str) -> bool {
     http_sessions()
         .lock()
-        .map(|lock| lock.contains_key(terminal_id))
+        .map(|lock| lock.get(terminal_id).is_some_and(|session| !session.stream_task.is_finished()))
         .unwrap_or(false)
 }
 

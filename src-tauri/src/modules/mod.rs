@@ -29,6 +29,7 @@ pub mod claude_settings;
 pub mod remote_terminal;
 pub mod remote_terminal_http;
 pub mod remote_workspace_sync;
+pub mod remote_sync_tools;
 
 use crate::models;
 

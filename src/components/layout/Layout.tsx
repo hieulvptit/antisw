@@ -1,7 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Navbar from '../navbar/Navbar';
-import BackgroundTaskRunner from '../common/BackgroundTaskRunner';
 import ToastContainer from '../common/ToastContainer';
 import { useViewStore } from '../../stores/useViewStore';
 import MiniView from './MiniView';
@@ -24,7 +23,6 @@ function Layout() {
     if (isMiniView) {
         return (
             <>
-                <BackgroundTaskRunner />
                 <ToastContainer />
                 <MiniView />
             </>
@@ -48,7 +46,6 @@ function Layout() {
                     getCurrentWindow().startDragging();
                 }}
             />
-            <BackgroundTaskRunner />
             <ToastContainer />
             <Navbar />
             <main className="flex-1 overflow-hidden flex flex-col relative">

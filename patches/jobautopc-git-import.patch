@@ -1,0 +1,180 @@
+--- a/term-server.js
++++ b/term-server.js
+@@ -159,7 +159,7 @@
+ async function route(req, res) {
+   const url = req.url || '';
+ 
+-  if (url === '/term/git/credentials' || (req.method === 'POST' && ['/term/git/clone', '/term/git/pull', '/term/git/push'].includes(url))) {
++  if (url === '/term/git/credentials' || (req.method === 'POST' && ['/term/git/clone', '/term/git/pull', '/term/git/push', '/term/git/import'].includes(url))) {
+     res.setHeader('Cache-Control', 'no-store');
+     const auth = termAuth.getAppToken(termAuth.parseBearer(req));
+     if (!auth) return sendJson(res, 401, { error: 'unauthorized' });
+@@ -171,6 +171,13 @@
+       if (req.method === 'PUT') return sendJson(res, 200, await gitService.credentials.save(auth, body));
+       await gitService.credentials.remove(auth, body && body.host);
+       res.writeHead(204); return res.end();
++    }
++    if (url === '/term/git/import') {
++      const body = await readJson(req);
++      if (!body || !sandbox.availableTools(ENABLED_TOOLS).includes(body.tool)
++          || !canCreateTerminal(auth, body.tool, auth.workspaceFolder)) return sendJson(res, 403, { error: 'git_import_tool_not_allowed' });
++      return sendJson(res, 200, await gitService.importRepository(auth, body,
++        (input, registered) => terminalRuntime.create(config.workspaceRoot, input, registered)));
+     }
+     return sendJson(res, 200, await gitService.operate(auth, url.split('/').pop(), await readJson(req)));
+   }
+--- a/ssh_broker/git_service.js
++++ b/ssh_broker/git_service.js
+@@ -10,6 +10,32 @@
+ class GitService {
+   constructor(registry, credentials = new GitCredentials(), runtime = sandbox) {
+     this.registry = registry; this.credentials = credentials; this.runtime = runtime;
++  }
++  async importRepository(identity, body, launch) {
++    if (!identity || !/^cdx-[a-z0-9-]{1,24}$/.test(identity.workspaceFolder || '') || !body || !['codex', 'claude'].includes(body.tool)) fail('invalid_git_import', 400);
++    const url = repoUrl(body.repo_url, this.credentials.allowed);
++    const credential = await this.credentials.read(identity, url.hostname);
++    if (!credential) fail('git_credentials_not_found', 409);
++    if (!this.runtime.enabled()) fail('git_sandbox_required', 503);
++    const name = url.pathname.replace(/\/$/, '').split('/').pop().replace(/\.git$/, '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 40) || 'repo';
++    const slug = `${name}-${crypto.randomBytes(8).toString('hex')}`;
++    const terminal_id = crypto.randomUUID();
++    const folder = identity.workspaceFolder;
++    const parent = this.runtime.safeDirectory(path.join(path.dirname(this.registry.dir), folder), true);
++    const target = path.join(parent, slug);
++    await fs.mkdir(target, { mode: 0o700 });
++    try {
++      const call = this.runtime.gitInvocation(folder, slug);
++      await this.run(call, { operation: 'clone', repo_url: url.href, credential });
++      // Start the CLI only AFTER clone, so it cannot create files in the
++      // initially empty destination or inspect a partially cloned repository.
++      const result = await this.registry.create(identity, { terminal_id, folder, slug, tool: body.tool },
++        (registered) => launch({ terminal_id, folder, slug, tool: body.tool }, registered));
++      return { ok: true, slug, terminal_id: result.terminal_id, repo_url: url.href };
++    } catch (err) {
++      await fs.rm(target, { recursive: true, force: true });
++      throw err;
++    }
+   }
+   async operate(identity, operation, body) {
+     if (!body || !/^[a-zA-Z0-9_-]{1,64}$/.test(body.terminal_id || '') || !['clone', 'pull', 'push'].includes(operation)) fail('invalid_git_operation', 400);
+--- a/ssh_broker/git_credentials.js
++++ b/ssh_broker/git_credentials.js
+@@ -6,7 +6,7 @@
+ const { fail } = require('./terminal_registry');
+ 
+ function hosts(env = process.env) {
+-  return (env.GIT_ALLOWED_HOSTS || 'github.com,gitlab.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
++  return (env.GIT_ALLOWED_HOSTS || 'git.vnpay.vn,github.com,gitlab.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+ }
+ function hostName(value, allowed) {
+   if (typeof value !== 'string' || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(value) || !allowed.includes(value)) fail('git_host_not_allowed', 400);
+--- a/.env.example
++++ b/.env.example
+@@ -57,6 +57,6 @@
+ WORKSPACE_ROOT=/media/nvme-data/codex-workspaces
+ 
+ # Per-SSO Git credentials (Ubuntu terminal service; provision with deploy-git-credentials.sh)
+-GIT_ALLOWED_HOSTS=github.com,gitlab.com
++GIT_ALLOWED_HOSTS=git.vnpay.vn,github.com,gitlab.com
+ GIT_CREDENTIAL_STORE=/var/lib/remote-terminal-git
+ GIT_CREDENTIAL_KEY_FILE=/etc/remote-terminal-git/key
+--- a/test/git_http.test.js
++++ b/test/git_http.test.js
+@@ -20,7 +20,7 @@
+   const alice = { ssoUsername: 'alice', workspaceFolder: 'cdx-alice' };
+   let identity = alice;
+   await registry.create(alice, { terminal_id: 'alice-repo', folder: alice.workspaceFolder, slug: 'repo', tool: 'codex' }, async () => ({ created: true }));
+-  const service = new GitService(registry, credentials, { enabled: () => true, gitInvocation: () => ({}) });
++  const service = new GitService(registry, credentials, { enabled: () => true, gitInvocation: () => ({}), safeDirectory: (dir) => { fs.mkdirSync(dir, { recursive: true }); return dir; } });
+   service.run = async () => ({ ok: true });
+   const file = path.resolve(__dirname, '../term-server.js'); const realRequire = createRequire(file);
+   const context = { __dirname: path.dirname(file), Buffer, URL, process: { env: {} }, console, setInterval, clearInterval,
+@@ -28,8 +28,9 @@
+       if (name === 'http') return { createServer: () => ({ listen() {} }) };
+       if (name === 'node-pty') return {};
+       if (name === './ssh_broker/config') return { workspaceRoot: root };
+-      if (name === './ssh_broker/terminal_access') return { canProvision: () => true };
++      if (name === './ssh_broker/terminal_access') return { canProvision: () => true, canCreateTerminal: () => true };
+       if (name === './ssh_broker/term_auth') return { ...realRequire(name), getAppToken: () => identity };
++      if (name === './ssh_broker/terminal_runtime') return { create: async () => ({ created: true }) };
+       if (name === './ssh_broker/git_service') return { GitService: function () { return service; } };
+       return realRequire(name);
+     } };
+@@ -55,9 +56,18 @@
+   assert.equal((await request('POST', '/term/git/push', job)).status, 404);
+   identity = alice;
+   for (const op of ['clone', 'pull', 'push']) assert.equal((await request('POST', '/term/git/' + op, job)).status, 200);
++  const imported = await request('POST', '/term/git/import', { repo_url: job.repo_url, tool: 'codex' });
++  assert.equal(imported.status, 200);
++  assert.match(imported.body.slug, /^repo-[a-f0-9]{16}$/);
++  const importedTerminal = (await registry.get(alice, imported.body.terminal_id)).terminal;
++  assert.equal(importedTerminal.slug, imported.body.slug);
++  assert.equal(importedTerminal.folder, alice.workspaceFolder);
++  assert.ok(!JSON.stringify(imported).includes(input.pat));
++  assert.equal((await request('POST', '/term/git/import', { repo_url: job.repo_url, tool: 'bash' })).status, 403);
+   assert.equal((await request('DELETE', endpoint, { host: input.host })).status, 204);
+   assert.equal((await request('POST', '/term/git/push', job)).body.error, 'git_credentials_not_found');
+   identity = null;
+   assert.equal((await request('PUT', endpoint, input)).status, 401);
+   assert.equal((await request('GET', endpoint)).status, 401);
++  assert.equal((await request('POST', '/term/git/import', { repo_url: job.repo_url, tool: 'codex' })).status, 401);
+ });
+--- /dev/null
++++ b/test/git_import.test.js
+@@ -0,0 +1,55 @@
++ 'use strict';
++const { test } = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('fs');
++const os = require('os');
++const path = require('path');
++const { GitService } = require('../ssh_broker/git_service');
++const { TerminalRegistry } = require('../ssh_broker/terminal_registry');
++const identity = { ssoUsername: 'alice', workspaceFolder: 'cdx-alice' };
++const body = { repo_url: 'https://git.vnpay.vn/group/Repo.git', tool: 'codex' };
++function fixture(t, credential = { host: 'git.vnpay.vn', pat: 'secret' }) {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'git-import-'));
++  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
++  const registry = new TerminalRegistry(root);
++  const service = new GitService(registry, { allowed: ['git.vnpay.vn'], read: async () => credential }, {
++    enabled: () => true,
++    safeDirectory(dir) { fs.mkdirSync(dir, { recursive: true }); return dir; },
++    gitInvocation(folder, slug) { return { target: path.join(root, folder, slug) }; },
++  });
++  return { root, registry, service };
++}
++test('import clones into unique workspace before launching CLI, registers inventory, returns no PAT', async (t) => {
++  const { root, registry, service } = fixture(t);
++  service.run = async (call, input) => {
++    assert.equal(input.operation, 'clone'); assert.equal(input.credential.pat, 'secret');
++    assert.deepEqual(fs.readdirSync(call.target), []);
++    fs.writeFileSync(path.join(call.target, 'README.md'), 'repo');
++  };
++  const launch = async (input) => {
++    assert.equal(fs.readFileSync(path.join(root, input.folder, input.slug, 'README.md'), 'utf8'), 'repo');
++    return { created: true };
++  };
++  const first = await service.importRepository(identity, body, launch);
++  const second = await service.importRepository(identity, body, launch);
++  assert.notEqual(first.slug, second.slug);
++  assert.equal((await registry.list(identity, async () => true)).terminals.length, 2);
++  assert.ok(!JSON.stringify(first).includes('secret'));
++});
++test('clone or terminal launch failure removes the new workspace and leaves no inventory', async (t) => {
++  const { root, registry, service } = fixture(t);
++  service.run = async (call) => { fs.writeFileSync(path.join(call.target, 'partial'), 'data'); throw new Error('git_command_failed'); };
++  await assert.rejects(service.importRepository(identity, body, () => assert.fail()), /git_command_failed/);
++  assert.deepEqual(fs.readdirSync(path.join(root, identity.workspaceFolder)), []);
++  service.run = async () => {};
++  await assert.rejects(service.importRepository(identity, body, async () => { throw new Error('launch_failed'); }), /launch_failed/);
++  assert.deepEqual(fs.readdirSync(path.join(root, identity.workspaceFolder)), []);
++  assert.equal((await registry.list(identity, async () => true)).terminals.length, 0);
++});
++test('missing PAT or disallowed URL blocks import before allocating a workspace', async (t) => {
++  const { root, service } = fixture(t, null);
++  await assert.rejects(service.importRepository(identity, body, () => assert.fail()), /git_credentials_not_found/);
++  await assert.rejects(service.importRepository(identity, { ...body, repo_url: 'https://evil.example/group/repo.git' }, () => assert.fail()), /git_host_not_allowed/);
++  await assert.rejects(service.importRepository(identity, { ...body, repo_url: 'https://alice:secret@git.vnpay.vn/group/repo.git' }, () => assert.fail()), /invalid_git_repo_url/);
++  assert.equal(fs.existsSync(path.join(root, identity.workspaceFolder)), false);
++});

@@ -1,0 +1,5 @@
+{
+  "bundle": {
+    "resources": { "resources/sync-tools/": "sync-tools/" }
+  }
+}

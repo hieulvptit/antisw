@@ -1203,6 +1203,49 @@
         "hint_curfew": "Để trống để tắt. Dựa trên giờ máy chủ."
     },
     "remote_terminal": {
+        "git": {
+            "add_button": "Import từ Git",
+            "import_button": "Clone và mở terminal",
+            "title": "Import repo từ Git",
+            "description": "Clone repo vào workspace mới trên server và mở terminal. Bạn có thể chọn thư mục local sau để tải file về.",
+            "repo_url": "URL repository (HTTPS)",
+            "tool": "Mở bằng",
+            "username": "Username Git",
+            "pat": "Personal Access Token (PAT)",
+            "commit_name": "Tên commit",
+            "commit_email": "Email commit",
+            "saved_pat": "Đã lưu PAT cho {{host}}. Để trống token để dùng lại.",
+            "new_pat": "Nhập thông tin Git cho {{host}}. PAT được lưu trên server theo tài khoản SSO của bạn.",
+            "pat_keep": "Dùng PAT đã lưu",
+            "pat_required": "Nhập PAT có quyền đọc repo",
+            "host_not_allowed": "Git host được phép: {{hosts}}",
+            "invalid_url": "Nhập URL repo HTTPS, không chứa username hoặc token.",
+            "cloning": "Đang clone trên server…",
+            "success": "Import repo thành công.",
+            "errors": {
+                "git_credentials_not_found": "Chưa có PAT cho Git host này. Hãy nhập thông tin Git.",
+                "git_command_failed": "Clone thất bại. Kiểm tra URL repo, quyền PAT và kết nối server.",
+                "git_host_not_allowed": "Git host này chưa được cho phép trên server.",
+                "git_sandbox_required": "Cần bật Git sandbox trên server để import repo.",
+                "git_credentials_unavailable": "Server chưa truy cập được kho thông tin Git.",
+                "git_operation_timeout": "Clone quá thời gian chờ. Thử lại hoặc kiểm tra server.",
+                "git_import_tool_not_allowed": "Công cụ terminal này chưa được cho phép cho tài khoản của bạn.",
+                "git_protocol_not_supported": "Cần cập nhật server để hỗ trợ import Git.",
+                "git_service_unavailable": "Không kết nối được dịch vụ Git. Kiểm tra kết nối server.",
+                "git_pat_required": "Nhập PAT để lưu thông tin Git.",
+                "invalid_git_credentials": "Kiểm tra username Git, PAT, tên và email commit.",
+                "invalid_git_repo_url": "Nhập URL repo HTTPS hợp lệ, không chứa thông tin đăng nhập.",
+                "git_sandbox_unavailable": "Git sandbox trên server chưa hoạt động."
+            }
+        },
+        "inventory": {
+            "bind_folder": "Chọn thư mục local",
+            "unsupported": "Server chưa hỗ trợ đồng bộ tab terminal giữa các máy.",
+            "remote_only": "Workspace trên server. Đồng bộ file cần thư mục local trên máy này.",
+            "remote_workspace": "Workspace trên server: {{slug}}",
+            "rename": "Đổi tên terminal",
+            "rename_prompt": "Tên terminal (tối đa 120 ký tự)"
+        },
         "auth": {
             "required": "Dịch vụ terminal từ chối thông tin SSO đang lưu. Hãy đăng nhập lại để cấp lại quyền truy cập; các tab thư mục được giữ nguyên.",
             "login_again": "Đăng nhập lại SSO"
@@ -1219,6 +1262,9 @@
             "commit_required": "Workspace thuộc client khác. Hãy commit và push thay đổi ở cả hai client trước khi đồng bộ.",
             "conflict": "Local và server có thay đổi xung đột. Hãy commit, push và đối chiếu với server trước khi đồng bộ.",
             "error": "Chưa xác minh được workspace. Kiểm tra kết nối rồi thử lại; server có thể cần cập nhật.",
+            "download_title": "Đồng bộ thư mục từ server",
+            "download_prompt": "Server hoặc phiên làm việc đã thay đổi. Đồng bộ từ server để cập nhật thư mục local trước khi upload hoặc mở terminal. File từ server sẽ được đồng bộ về thư mục local; cần xử lý thay đổi local bị xung đột trước.",
+            "download_later": "Để sau",
             "download_button": "Đồng bộ về máy",
             "check_button": "Kiểm tra lại"
         },
@@ -1254,7 +1300,7 @@
         "choose_folder_button": "Chọn thư mục",
         "sync_now_button": "Đồng bộ ngay",
         "sync": {
-            "new_project": "Dự án mới chưa đồng bộ. Bấm Codex hoặc Claude để tự đồng bộ workspace trống lên server rồi mở terminal.",
+            "new_project": "Dự án chưa đồng bộ. Bấm Codex hoặc Claude để đồng bộ thư mục local lên server rồi mở terminal.",
             "synced": "Đã đồng bộ file lên server",
             "idle": "Chưa đồng bộ",
             "syncing": "Đang đồng bộ...",
@@ -1266,8 +1312,10 @@
         },
         "add_folder_button": "Thêm thư mục",
         "close_folder_tooltip": "Đóng tab thư mục",
-        "confirm_close_folder": "Thư mục này đang có terminal chạy. Đóng và dừng tất cả?",
-        "empty_state_add_folder": "Thêm thư mục trống để tạo dự án mới, đồng bộ lên server rồi mở terminal.",
+        "close_folder_title": "Đóng thư mục và giải phóng dung lượng server",
+        "close_folder_button": "Đóng và xoá workspace",
+        "confirm_close_folder": "Đóng thư mục này? Tất cả terminal của workspace, kể cả trên thiết bị khác, sẽ bị đóng và thư mục làm việc trên server sẽ bị xoá. Hãy đồng bộ file cần giữ về thiết bị trước. File local vẫn được giữ.",
+        "empty_state_add_folder": "Thêm thư mục dự án, đồng bộ lên server rồi mở terminal.",
         "terminal_tab_label": "Terminal {{index}}",
         "terminal_closed_badge": "đã đóng",
         "share_terminal_button": "Chia sẻ",
@@ -1282,7 +1330,7 @@
             "codex": "Codex",
             "claude": "Claude Code"
         },
-        "empty_folder_hint": "Chọn thư mục trống để tạo dự án mới",
-        "empty_folder_required": "Chỉ được thêm thư mục trống để tạo dự án mới. Thư mục đã chọn có file hoặc thư mục con (kể cả file ẩn)."
+        "folder_hint": "Chọn thư mục cho dự án mới hoặc dự án có sẵn",
+        "empty_folder_required": "Chọn thư mục local trống để tải workspace từ remote. Thư mục đã chọn có file hoặc thư mục con (kể cả file ẩn)."
     }
 }

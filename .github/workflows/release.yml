@@ -37,6 +37,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config libsoup-3.0-dev javascriptcoregtk-4.1 libjavascriptcoregtk-4.1-dev
           sudo apt-get install -y libnm-dev xdg-utils
+          sudo apt-get install -y rsync openssh-client
+
+      - name: Enable corresponding source downloads (Linux)
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          # Ubuntu 22.04 uses .list; 24.04 uses deb822 .sources.
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          files = [Path('/etc/apt/sources.list'), *Path('/etc/apt/sources.list.d').glob('*.list')]
+          lines = []
+          for path in files:
+              if path.exists():
+                  lines.extend('deb-src ' + line[4:] for line in path.read_text().splitlines() if line.startswith('deb '))
+          Path('/etc/apt/sources.list.d/sync-tools-src.list').write_text('\n'.join(lines) + '\n')
+          for path in Path('/etc/apt/sources.list.d').glob('*.sources'):
+              text = path.read_text().replace('Types: deb\n', 'Types: deb deb-src\n')
+              path.write_text(text)
+          PY
+          sudo apt-get update
+
+      - name: Install sync build dependencies (Windows)
+        id: sync-msys2
+        if: matrix.platform == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: rsync openssh curl
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
@@ -54,9 +82,19 @@ jobs:
 
       - name: Build the app
         env:
+          SYNC_TOOLS_COLLECT_SOURCES: "1"
+          MSYS2_ROOT: ${{ steps.sync-msys2.outputs.msys2-location }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build -- ${{ matrix.args }}
+
+      - name: Upload sync tools corresponding sources
+        if: matrix.platform != 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-sync-sources-${{ matrix.platform }}
+          path: src-tauri/target/sync-tools-sources-*.tar.gz
+          if-no-files-found: error
 
       # 3. 处理 macOS 架构重命名冲突 (解决 422 Already Exists)
       - name: Rename macOS assets for architecture

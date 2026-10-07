@@ -42,6 +42,7 @@ export interface TerminalTabState {
     tabId: string;
     tool: RemoteTool;
     status: TerminalStatus;
+    title?: string | null;
 }
 
 const LOCAL_DIR_STORAGE_KEY = 'antisw_remote_terminal_local_dir';
@@ -88,6 +89,11 @@ interface RemoteTerminalState {
     // Terminals (inner tab strip, scoped to whichever folder owns them).
     terminals: Record<string, TerminalTabState>;
 
+    reconcileSession: (session: {
+        folders: { tab_id: string; local_dir: string; slug: string; files_synced: boolean }[];
+        terminals: { terminal_id: string; tab_id: string; tool: RemoteTool; title?: string | null; status: TerminalStatus }[];
+        inventory_synced: boolean;
+    }) => void;
     setLoginStatus: (status: LoginStatus) => void;
     setLoginUrl: (url: string | null) => void;
     setReady: (ready: RemoteTerminalReady | null) => void;
@@ -124,6 +130,41 @@ export const useRemoteTerminalStore = create<RemoteTerminalState>((set) => ({
 
     terminals: {},
 
+    reconcileSession: (session) => set((state) => {
+        const folders: Record<string, FolderTabState> = session.inventory_synced ? {} : { ...state.folders };
+        const terminals: Record<string, TerminalTabState> = session.inventory_synced ? {} : { ...state.terminals };
+        for (const folder of session.folders) {
+            const old = state.folders[folder.tab_id];
+            folders[folder.tab_id] = old ? { ...old } : {
+                tabId: folder.tab_id, localDir: folder.local_dir, slug: folder.slug,
+                syncStatus: 'idle', syncMessage: null, syncOutputLine: null, lastSyncedAt: null,
+                filesSynced: folder.files_synced, workspaceStatus: 'unknown', workspaceError: null,
+                terminalIds: [], activeTerminalId: null,
+            };
+            folders[folder.tab_id].localDir = folder.local_dir;
+            folders[folder.tab_id].filesSynced = folder.files_synced;
+        }
+        for (const terminal of session.terminals) {
+            terminals[terminal.terminal_id] = {
+                terminalId: terminal.terminal_id, tabId: terminal.tab_id, tool: terminal.tool,
+                title: terminal.title, status: terminal.status,
+            };
+        }
+        for (const folder of Object.values(folders)) {
+            const ids = Object.values(terminals).filter((t) => t.tabId === folder.tabId).map((t) => t.terminalId);
+            folders[folder.tabId] = {
+                ...folder, terminalIds: ids,
+                activeTerminalId: folder.activeTerminalId && ids.includes(folder.activeTerminalId)
+                    ? folder.activeTerminalId : ids[0] ?? null,
+            };
+        }
+        const folderOrder = [...state.folderOrder.filter((id) => folders[id]),
+            ...session.folders.map((f) => f.tab_id).filter((id) => !state.folderOrder.includes(id))];
+        return {
+            folders, terminals, folderOrder,
+            activeTabId: state.activeTabId && folders[state.activeTabId] ? state.activeTabId : folderOrder[0] ?? null,
+        };
+    }),
     setLoginStatus: (loginStatus) => set({ loginStatus }),
     setLoginUrl: (loginUrl) => set({ loginUrl }),
     setReady: (ready) => set({ ready }),
@@ -202,7 +243,7 @@ export const useRemoteTerminalStore = create<RemoteTerminalState>((set) => ({
                 ...state.folders,
                 [tabId]: {
                     ...tab,
-                    terminalIds: [...tab.terminalIds, terminalId],
+                    terminalIds: tab.terminalIds.includes(terminalId) ? tab.terminalIds : [...tab.terminalIds, terminalId],
                     activeTerminalId: terminalId,
                 },
             },

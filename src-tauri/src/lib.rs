@@ -324,6 +324,7 @@ pub fn run() {
         .manage(AppRuntimeFlags { tray_enabled })
         .setup(|app| {
             info!("Setup starting...");
+            modules::remote_sync_tools::init(app.path().resource_dir()?);
 
             // Initialize log bridge with app handle for debug console
             modules::log_bridge::init_log_bridge(app.handle().clone());
@@ -364,9 +365,8 @@ pub fn run() {
             // Port 8045 is disabled - users can manually enable if needed
             info!("Proxy auto-start disabled (port 8045 not opened by default)");
 
-            // Start smart scheduler
-            let scheduler_state = app.handle().state::<commands::proxy::ProxyServiceState>();
-            modules::scheduler::start_scheduler(Some(app.handle().clone()), scheduler_state.inner().clone());
+            // Desktop accounts are loaded/refreshed only while the Accounts tab is open.
+            // Keep the standalone scheduler for headless mode only.
 
             // [REMOVED] Port 8045 integration
             info!("Proxy server disabled by default");
@@ -577,6 +577,9 @@ pub fn run() {
             commands::remote_terminal::remote_terminal_start_login,
             commands::remote_terminal::remote_terminal_cancel_login,
             commands::remote_terminal::remote_terminal_add_folder,
+            commands::remote_terminal::remote_terminal_list_git_credentials,
+            commands::remote_terminal::remote_terminal_save_git_credentials,
+            commands::remote_terminal::remote_terminal_import_git,
             commands::remote_terminal::remote_terminal_close_folder,
             commands::remote_terminal::remote_terminal_sync_folder,
             commands::remote_terminal::remote_terminal_check_workspace,
@@ -588,6 +591,9 @@ pub fn run() {
             commands::remote_terminal::remote_terminal_resize,
             commands::remote_terminal::remote_terminal_close_terminal,
             commands::remote_terminal::remote_terminal_restore_session,
+            commands::remote_terminal::remote_terminal_refresh_sessions,
+            commands::remote_terminal::remote_terminal_rename_terminal,
+            commands::remote_terminal::remote_terminal_bind_local_folder,
             commands::remote_terminal::remote_terminal_get_share_link,
             commands::remote_terminal::remote_terminal_trace,
         ])

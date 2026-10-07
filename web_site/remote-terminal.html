@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi" style="background-color: #1a1f2e;">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/png" href="logo.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Hướng dẫn sử dụng Remote Terminal trong AntiSwitcher: đăng nhập SSO, tạo workspace, mở Codex và Claude Code, đồng bộ và chia sẻ terminal." />
+  <title>Hướng dẫn Remote Terminal · AntiSwitcher</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0a0e14; --panel: #121923; --line: #273341; --text: #e6edf3; --muted: #a2b1c2; --green: #52e0af; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.75 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    a { color: var(--green); text-underline-offset: 4px; }
+    a:hover { color: #a5f7d9; }
+    a:focus-visible, summary:focus-visible, button:focus-visible { outline: 2px solid var(--green); outline-offset: 5px; }
+    .skip { position: absolute; left: 16px; top: -100px; z-index: 10; padding: 8px 16px; background: var(--panel); }
+    .skip:focus { top: 12px; }
+    .top { position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--line); background: rgba(10,14,20,.94); backdrop-filter: blur(12px); }
+    .nav { max-width: 1160px; margin: auto; padding: 16px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { display: flex; gap: 12px; align-items: center; font-weight: 750; letter-spacing: .04em; }
+    .brand img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav a { font-size: 14px; text-decoration: none; }
+    .hero { max-width: 1160px; margin: auto; padding: 72px 28px 48px; }
+    .eyebrow { color: var(--green); font-size: 12px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { font-size: clamp(40px, 7vw, 72px); line-height: 1.1; letter-spacing: -.045em; margin: 16px 0 24px; }
+    h1 span { color: var(--green); }
+    .intro { max-width: 700px; font-size: 19px; color: var(--muted); }
+    .flow { display: flex; flex-wrap: wrap; gap: 10px; margin: 28px 0 0; }
+    .flow span { border: 1px solid var(--line); padding: 6px 14px; border-radius: 99px; font-size: 13px; }
+    .layout { max-width: 1160px; margin: auto; padding: 0 28px 80px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; }
+    aside nav { position: sticky; top: 100px; }
+    aside p { margin: 0 0 16px; font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+    aside a { display: block; padding: 7px 0; color: var(--muted); text-decoration: none; font-size: 14px; }
+    section { padding: 30px 0; border-top: 1px solid var(--line); }
+    h2 { font-size: 25px; line-height: 1.35; margin: 0 0 20px; letter-spacing: -.02em; }
+    h3 { margin: 0 0 8px; font-size: 17px; }
+    p { margin: 0 0 16px; }
+    li { margin-bottom: 10px; }
+    ol, ul { padding-left: 24px; }
+    strong { color: #fff; }
+    .number { color: var(--green); font-size: 14px; margin-right: 12px; font-weight: 600; }
+    .note { padding: 18px 20px; background: #10251f; border: 1px solid #23523f; border-radius: 12px; margin: 20px 0; }
+    .note p:last-child, .card p:last-child { margin-bottom: 0; }
+    .note.warn { background: #292214; border-color: #67532b; }
+    .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+    .card p { color: var(--muted); font-size: 14px; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    caption { text-align: left; padding: 16px; font-weight: 650; background: var(--panel); }
+    th, td { padding: 14px 16px; text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
+    th { color: var(--muted); background: var(--panel); }
+    td:first-child { min-width: 180px; color: var(--green); }
+    code { font: .88em/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; background: #202a36; border-radius: 4px; padding: 2px 5px; overflow-wrap: anywhere; }
+    .example { padding: 20px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
+    .example small { display: block; color: var(--green); margin-bottom: 10px; }
+    figure { margin: 24px 0; }
+    figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    figure a { display: block; }
+    figcaption { margin-top: 12px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .image-label { display: block; color: var(--green); font-weight: 650; margin-bottom: 4px; }
+    details { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; margin: 12px 0; padding: 16px 20px; }
+    summary { cursor: pointer; font-weight: 600; }
+    details p { color: var(--muted); margin: 14px 0 0; }
+    footer { border-top: 1px solid var(--line); padding: 24px 28px; text-align: center; color: var(--muted); font-size: 13px; }
+    button { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+    @media (max-width: 780px) { .layout { grid-template-columns: 1fr; gap: 24px; } aside nav { position: static; } aside a { display: inline-block; margin-right: 16px; } .hero { padding-top: 44px; } }
+    @media (max-width: 480px) { .cards { grid-template-columns: 1fr; } .nav, .hero, .layout { padding-left: 20px; padding-right: 20px; } .nav { flex-wrap: wrap; } }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print { :root { --bg: #fff; --panel: #f5f5f5; --line: #ccc; --text: #111; --muted: #444; --green: #126747; color-scheme: light; } .top, aside, .skip, button { display: none; } .hero { padding-top: 20px; } .layout { display: block; } strong { color: #111; } .note, .note.warn, code { background: #f5f5f5; } details { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#guide">Chuyển đến hướng dẫn</a>
+  <header class="top">
+    <div class="nav">
+      <div class="brand"><img src="logo.png" alt="" /> ANTISWITCHER</div>
+      <a href="#start">Bắt đầu sử dụng ↗</a>
+    </div>
+  </header>
+  <div class="hero">
+    <div class="eyebrow">Tài liệu sử dụng · Remote Terminal</div>
+    <h1>Làm việc từ xa.<br /><span>Bắt đầu từ đây.</span></h1>
+    <p class="intro">Đăng nhập bằng SSO công ty, tạo workspace trên máy chủ và làm việc với Codex hoặc Claude Code ngay trong AntiSwitcher.</p>
+    <div class="flow" aria-label="Quy trình sử dụng"><span>01 · Đăng nhập SSO</span><span>02 · Thêm thư mục trống</span><span>03 · Mở terminal</span><span>04 · Đồng bộ kết quả</span></div>
+  </div>
+  <div class="layout">
+    <aside><nav aria-label="Mục lục">
+      <p>Trong hướng dẫn này</p>
+      <a href="#prepare">Chuẩn bị</a><a href="#start">Đăng nhập & tạo dự án</a><a href="#terminal">Làm việc với terminal</a><a href="#sync">Đồng bộ workspace</a><a href="#share">Chia sẻ link & QR</a><a href="#troubleshoot">Xử lý sự cố</a>
+    </nav></aside>
+    <main id="guide">
+      <section id="prepare">
+        <h2><span class="number">01</span>Chuẩn bị trước khi bắt đầu</h2>
+        <ul>
+          <li>Mở ứng dụng AntiSwitcher trên máy tính và chọn mục <strong>Remote Terminal</strong> trên thanh điều hướng.</li>
+          <li>Chuẩn bị tài khoản SSO công ty có quyền truy cập dịch vụ terminal và kết nối mạng đến máy chủ.</li>
+          <li>Tạo một <strong>thư mục trống</strong> trên máy, ví dụ <code>remote-demo</code>, để làm nơi lưu dự án mới.</li>
+        </ul>
+        <div class="note"><p><strong>Thư mục phải trống hoàn toàn.</strong> Ứng dụng kiểm tra cả file ẩn và thư mục con. Không chọn thư mục dự án đã có mã nguồn hoặc đã chứa <code>.git</code> khi thêm dự án mới.</p></div>
+      </section>
+      <section id="start">
+        <h2><span class="number">02</span>Đăng nhập & tạo dự án đầu tiên</h2>
+        <ol>
+          <li>Bấm <strong>Đăng nhập SSO</strong>. Ứng dụng mở trình duyệt để xác thực.</li>
+          <li>Hoàn tất đăng nhập bằng tài khoản công ty, rồi quay lại AntiSwitcher. Sau khi thành công, màn hình hiển thị tên <strong>Người dùng</strong> và nút <strong>Thêm thư mục</strong>.</li>
+          <li>Bấm <strong>Thêm thư mục</strong> và chọn thư mục trống đã chuẩn bị. Một tab thư mục mới xuất hiện.</li>
+          <li>Chờ ứng dụng kiểm tra workspace. Bấm <strong>Codex</strong> hoặc <strong>Claude Code</strong> để mở terminal. Với dự án mới vẫn còn trống, ứng dụng tự đồng bộ workspace trước khi mở.</li>
+          <li>Nếu muốn xác nhận workspace trước, bấm <strong>Đồng bộ ngay</strong>, chờ hoàn tất rồi mở công cụ.</li>
+        </ol>
+        <div class="note"><p><strong>Chỉ thấy nút Codex?</strong> Các nút công cụ phụ thuộc vào công cụ được máy chủ cài đặt và bật. Claude Code chỉ xuất hiện khi máy chủ hỗ trợ.</p></div>
+        <p>Nếu đã thêm file vào thư mục sau khi chọn nhưng chưa đồng bộ lần đầu, hãy bấm <strong>Đồng bộ ngay</strong> trước khi mở terminal.</p>
+        <figure>
+          <a href="images/remote-terminal/choose-folder.jpg" target="_blank" rel="noopener" aria-label="Mở ảnh chọn thư mục ở kích thước đầy đủ">
+            <img src="images/remote-terminal/choose-folder.jpg" width="1760" height="896" loading="lazy" alt="Hộp chọn thư mục trên macOS, đang mở thư mục remote-terminal-demo trống với nút Open ở góc dưới bên phải." />
+          </a>
+          <figcaption><span class="image-label">Ảnh 1 · Chọn thư mục trống</span>Sau khi bấm <strong>Add folder (Thêm thư mục)</strong>, chọn thư mục dành cho dự án mới rồi bấm <strong>Open</strong>. Ảnh minh họa thư mục mẫu trống trên macOS. Bấm ảnh để xem kích thước đầy đủ.</figcaption>
+        </figure>
+      </section>
+      <section id="terminal">
+        <h2><span class="number">03</span>Làm việc với terminal</h2>
+        <p>Bấm vào vùng terminal, nhập yêu cầu cho công cụ và nhấn <strong>Enter</strong>. Công cụ chạy trên máy chủ, sử dụng workspace tương ứng với tab thư mục đang chọn.</p>
+        <figure>
+          <a href="images/remote-terminal/workspace.jpg" target="_blank" rel="noopener" aria-label="Mở ảnh workspace và terminal Codex ở kích thước đầy đủ">
+            <img src="images/remote-terminal/workspace.jpg" width="3024" height="1898" loading="lazy" alt="Remote Terminal trong AntiSwitcher với tab NewProject, trạng thái có thay đổi local, các nút Check again, Sync now, Share và terminal Codex đang mở." />
+          </a>
+          <figcaption><span class="image-label">Ảnh 2 · Workspace và terminal Codex</span>Tab thư mục nằm ở phía trên; các tab terminal nằm ngay trên vùng nhập lệnh. <strong>Check again</strong> là Kiểm tra lại, <strong>Sync now</strong> là Đồng bộ ngay, <strong>Share</strong> là Chia sẻ. Trong ảnh, workspace có thay đổi local cần đưa lên server; đây không phải trạng thái đã đồng bộ. Bấm ảnh để xem chi tiết.</figcaption>
+        </figure>
+        <div class="example"><small>Ví dụ yêu cầu đầu tiên</small>Tạo một trang giới thiệu dự án bằng HTML và CSS trong workspace hiện tại. Giao diện tiếng Việt, hỗ trợ điện thoại. Sau khi hoàn thành, liệt kê các file đã tạo.</div>
+        <div class="cards" style="margin-top: 20px;">
+          <div class="card"><h3>Nhiều thư mục</h3><p>Mỗi tab thư mục có workspace và các terminal riêng. Bấm tên thư mục để chuyển dự án.</p></div>
+          <div class="card"><h3>Nhiều terminal</h3><p>Bấm nút công cụ để mở thêm terminal trong cùng thư mục. Bấm tab terminal để chuyển phiên; lịch sử hiển thị được giữ khi chuyển tab.</p></div>
+          <div class="card"><h3>Đóng terminal</h3><p>Bấm dấu × trên tab terminal để đóng phiên tương ứng. Kiểm tra công việc đang chạy trước khi đóng.</p></div>
+          <div class="card"><h3>Đóng thư mục</h3><p>Bấm dấu × trên tab thư mục. Nếu còn terminal, ứng dụng yêu cầu xác nhận đóng và dừng tất cả terminal của thư mục đó.</p></div>
+        </div>
+        <p style="margin-top: 20px;">Khi mở lại màn hình hoặc khởi động lại ứng dụng, hệ thống thử khôi phục các tab và terminal đã lưu nếu thông tin truy cập còn hợp lệ.</p>
+      </section>
+      <section id="sync">
+        <h2><span class="number">04</span>Đồng bộ workspace đúng chiều</h2>
+        <p><strong>Đồng bộ ngay</strong> đưa file từ máy tính lên máy chủ. Khi có thay đổi trên máy chủ cần lấy về, dùng <strong>Đồng bộ về máy</strong>. Bấm <strong>Kiểm tra lại</strong> để cập nhật trạng thái trước khi thao tác.</p>
+        <div class="note warn"><p><strong>Đồng bộ có thể ghi đè và xóa file ở phía nhận.</strong> Thao tác tạo bản sao theo phía nguồn, bao gồm xóa file không còn tồn tại ở nguồn trong phạm vi đồng bộ. Hãy kiểm tra đúng chiều và lưu các thay đổi cần giữ trước khi đồng bộ.</p></div>
+        <div class="table-wrap"><table>
+          <caption>Trạng thái workspace và việc cần làm</caption>
+          <thead><tr><th scope="col">Thông báo / trạng thái</th><th scope="col">Cách xử lý</th></tr></thead>
+          <tbody>
+            <tr><td>Đang kiểm tra</td><td>Chờ kết quả kiểm tra workspace và phiên.</td></tr>
+            <tr><td>Workspace đang trống</td><td>Bấm <strong>Đồng bộ ngay</strong> để xác nhận, hoặc mở công cụ để tự đồng bộ dự án mới còn trống.</td></tr>
+            <tr><td>File local và server giống nhau</td><td>Bấm <strong>Đồng bộ ngay</strong> để xác nhận phiên workspace.</td></tr>
+            <tr><td>Có thay đổi local</td><td>Bấm <strong>Đồng bộ ngay</strong> để đưa thay đổi lên máy chủ.</td></tr>
+            <tr><td>Server hoặc phiên đã thay đổi</td><td>Bấm <strong>Đồng bộ về máy</strong> trước khi tải thay đổi local lên.</td></tr>
+            <tr><td>Workspace thuộc client khác</td><td>Commit và push thay đổi ở cả hai client theo thông báo, rồi bấm <strong>Kiểm tra lại</strong>.</td></tr>
+            <tr><td>Local và server xung đột</td><td>Commit, push và đối chiếu thay đổi với server, xử lý xung đột rồi kiểm tra lại.</td></tr>
+            <tr><td>Workspace và phiên đã đồng bộ</td><td>Có thể mở terminal và tiếp tục làm việc.</td></tr>
+            <tr><td>Chưa xác minh được workspace</td><td>Kiểm tra kết nối, bấm <strong>Kiểm tra lại</strong>; nếu vẫn lỗi, liên hệ quản trị dịch vụ.</td></tr>
+          </tbody>
+        </table></div>
+        <p style="margin-top: 20px;"><strong>Sau khi công cụ tạo hoặc sửa file:</strong> bấm <strong>Kiểm tra lại</strong>. Khi trạng thái yêu cầu tải về và nút <strong>Đồng bộ về máy</strong> xuất hiện, bấm nút đó, chờ hoàn tất rồi mở thư mục local để xem kết quả.</p>
+      </section>
+      <section id="share">
+        <h2><span class="number">05</span>Chia sẻ bằng link hoặc mã QR</h2>
+        <ol>
+          <li>Chọn thư mục đang có terminal và chọn một tab terminal.</li>
+          <li>Bấm <strong>Chia sẻ</strong>. Ứng dụng tạo link, sao chép vào clipboard và hiển thị mã QR.</li>
+          <li>Dán link vào nơi cần sử dụng, hoặc quét QR bằng điện thoại để mở terminal trên trình duyệt.</li>
+          <li>Hoàn tất xác thực SSO nếu trình duyệt yêu cầu. Quyền truy cập do máy chủ kiểm tra.</li>
+        </ol>
+        <div class="note"><p><strong>Một link cho các terminal đang mở trong cùng thư mục.</strong> Trang chia sẻ cho phép chuyển giữa các terminal thuộc nhóm đó. Nút Chia sẻ chỉ khả dụng khi đã có terminal được chọn.</p></div>
+      </section>
+      <section id="troubleshoot">
+        <h2><span class="number">06</span>Xử lý sự cố thường gặp</h2>
+        <details><summary>Đăng nhập SSO không hoàn tất</summary><p>Kiểm tra cửa sổ trình duyệt được mở và hoàn tất xác thực công ty. Nếu cần bắt đầu lại, bấm <strong>Hủy</strong> trong màn hình chờ rồi bấm <strong>Đăng nhập SSO</strong> lần nữa.</p></details>
+        <details><summary>Thông tin SSO bị từ chối hoặc hết hiệu lực</summary><p>Bấm <strong>Đăng nhập lại SSO</strong> trong thông báo để cấp lại quyền truy cập. Các tab thư mục được giữ nguyên. Sau khi đăng nhập, kiểm tra trạng thái workspace trước khi tiếp tục.</p></details>
+        <details><summary>Chấm kết nối màu đỏ</summary><p>Ứng dụng chưa kết nối được tới máy chủ remote. Kiểm tra mạng và khả năng truy cập dịch vụ, sau đó bấm <strong>Kiểm tra lại</strong>. Chỉ tiếp tục đồng bộ khi kết nối đã phục hồi.</p></details>
+        <details><summary>Không thêm được thư mục</summary><p>Chọn một thư mục mới, hoàn toàn trống. File ẩn hoặc thư mục con cũng khiến thư mục bị từ chối. Không xóa dữ liệu dự án đang có chỉ để làm trống thư mục.</p></details>
+        <details><summary>Nút Đồng bộ ngay bị vô hiệu hóa</summary><p>Chờ nếu đang đồng bộ. Đọc trạng thái workspace: có thể cần tải về máy, xử lý xung đột, commit/push ở client khác hoặc đăng nhập lại SSO. Bấm <strong>Kiểm tra lại</strong> sau khi xử lý.</p></details>
+        <details><summary>API đồng bộ workspace trả lỗi 404</summary><p>Dịch vụ terminal chưa hỗ trợ API workspace hoặc route phía server chưa được cấu hình. Liên hệ quản trị để cập nhật dịch vụ hoặc cấu hình route, rồi kiểm tra lại.</p></details>
+        <details><summary>Đồng bộ báo không tìm thấy rsync</summary><p>Máy tính cần có rsync để truyền file. Nhờ bộ phận hỗ trợ cài đặt rsync phù hợp với hệ điều hành rồi thử đồng bộ lại.</p></details>
+        <details><summary>Terminal báo phiên làm việc đã kết thúc</summary><p>Phiên terminal đó đã đóng. Kiểm tra SSO và trạng thái workspace, sau đó bấm nút công cụ để mở terminal mới.</p></details>
+      </section>
+    </main>
+  </div>
+  <footer>AntiSwitcher · Hướng dẫn sử dụng Remote Terminal · <a href="#guide">Về đầu hướng dẫn ↑</a></footer>
+</body>
+</html>

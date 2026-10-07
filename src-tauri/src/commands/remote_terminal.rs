@@ -37,10 +37,10 @@ pub async fn remote_terminal_add_folder(local_dir: String) -> AppResult<AddFolde
     remote_terminal::add_folder(local_dir)
 }
 
-/// Close a folder tab: kills every terminal open under it, then drops it.
+/// Stop all remote workspace terminals and delete its server directory, then drop the tab.
 #[tauri::command]
 pub async fn remote_terminal_close_folder(tab_id: String) -> AppResult<()> {
-    remote_terminal::close_folder(tab_id)
+    remote_terminal::close_folder(tab_id).await
 }
 
 /// One-way (client -> remote) mirror of a folder tab's local directory into
@@ -110,7 +110,7 @@ pub async fn remote_terminal_resize(
 /// Close a specific terminal (no local shell fallback, no auto-reconnect).
 #[tauri::command]
 pub async fn remote_terminal_close_terminal(terminal_id: String) -> AppResult<()> {
-    remote_terminal::close_terminal(&terminal_id)
+    remote_terminal::close_terminal(&terminal_id).await
 }
 
 /// Build a public, SSO-gated "share link" (reachable from any browser) that
@@ -136,12 +136,42 @@ pub async fn remote_terminal_trace(lines: Vec<String>) -> AppResult<()> {
     remote_terminal::append_trace(lines)
 }
 
-/// Restore the remote-terminal screen from `session.json`: the login (if the
-/// persisted key is still on disk), every folder tab, and every terminal
-/// (reconnected by reattaching to its remote `tmux` session). Call once when
-/// the Remote Terminal page mounts. Returns `None` when there's nothing to
-/// restore, in which case the frontend just shows the login screen as usual.
+/// Restore the cached login, fetch this account's terminal inventory, and
+/// attach to running sessions. Local folder mappings stay on this device.
+/// Returns None without a cached login; call on page mount and after SSO.
 #[tauri::command]
 pub async fn remote_terminal_restore_session(app_handle: tauri::AppHandle) -> AppResult<Option<RestoredSession>> {
     remote_terminal::restore_session(app_handle).await
+}
+
+/// Refresh account inventory without repainting viewers already attached.
+#[tauri::command]
+pub async fn remote_terminal_refresh_sessions(app_handle: tauri::AppHandle) -> AppResult<Option<RestoredSession>> {
+    remote_terminal::refresh_sessions(app_handle).await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_rename_terminal(terminal_id: String, label: String) -> AppResult<()> {
+    remote_terminal::rename_terminal(terminal_id, label).await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_bind_local_folder(tab_id: String, local_dir: String) -> AppResult<()> {
+    remote_terminal::bind_local_folder(tab_id, local_dir).await
+}
+
+/// Metadata only; the server never returns saved PAT values.
+#[tauri::command]
+pub async fn remote_terminal_list_git_credentials() -> AppResult<serde_json::Value> {
+    remote_terminal::list_git_credentials().await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_save_git_credentials(credential: serde_json::Value) -> AppResult<()> {
+    remote_terminal::save_git_credentials(credential).await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_import_git(repo_url: String, tool: String) -> AppResult<serde_json::Value> {
+    remote_terminal::import_git_repository(repo_url, tool).await
 }

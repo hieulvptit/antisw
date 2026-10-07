@@ -22,6 +22,8 @@ import ModalDialog from "../components/common/ModalDialog";
 import Pagination from "../components/common/Pagination";
 import AccountErrorDialog from "../components/accounts/AccountErrorDialog";
 import { showToast } from "../components/common/ToastContainer";
+import BackgroundTaskRunner from "../components/common/BackgroundTaskRunner";
+import { listen } from "@tauri-apps/api/event";
 
 import { useAccountStore } from "../stores/useAccountStore";
 import { useConfigStore } from "../stores/useConfigStore";
@@ -271,8 +273,28 @@ function Accounts() {
   }, [localPageSize, config?.accounts_page_size, containerSize, viewMode]);
 
   useEffect(() => {
-    fetchAccounts();
-  }, []);
+    // Defer until mount settles so StrictMode does not load accounts twice.
+    const timer = setTimeout(() => {
+      void fetchAccounts();
+      void fetchCurrentAccount();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchAccounts, fetchCurrentAccount]);
+
+  // Subscribe only while the Accounts tab is open.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    const unlisten = listen('accounts://refreshed', () => {
+      if (disposed) return;
+      void fetchAccounts();
+      void fetchCurrentAccount();
+    });
+    return () => {
+      disposed = true;
+      void unlisten.then(stop => stop());
+    };
+  }, [fetchAccounts, fetchCurrentAccount]);
 
   // Listen for VNPAY SSO events
   useEffect(() => {
@@ -776,6 +798,7 @@ function Accounts() {
 
   return (
     <div className="h-full flex flex-col p-5 gap-4 max-w-7xl mx-auto w-full">
+      <BackgroundTaskRunner />
       {/* 测试按钮 - 在最顶部 */}
       <input
         ref={fileInputRef}

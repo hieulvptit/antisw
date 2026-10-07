@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal, QRCode } from 'antd';
+import { Input, Modal, QRCode } from 'antd';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
     LogIn, Loader2, Terminal as TerminalIcon, XCircle,
-    FolderOpen, RefreshCw, Plus, X, Share2,
+    FolderOpen, RefreshCw, Plus, X, Share2, Pencil, GitBranch,
 } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -14,7 +14,8 @@ import '@xterm/xterm/css/xterm.css';
 import { request as invoke } from '../utils/request';
 import { showToast } from '../components/common/ToastContainer';
 import { isTauri } from '../utils/env';
-import { useRemoteTerminalStore, RemoteTerminalReady, RemoteTool, WorkspaceStatus } from '../stores/useRemoteTerminalStore';
+import { useRemoteTerminalStore, RemoteTerminalReady, RemoteTool, WorkspaceStatus, TerminalStatus } from '../stores/useRemoteTerminalStore';
+import GitImportModal, { GitImportResult } from '../components/remote/GitImportModal';
 import { installImeInput } from '../utils/xtermImeInput';
 import { debugState, escapeForLog, installDebugSwitches, record } from '../utils/remoteTerminalDebug';
 
@@ -56,12 +57,16 @@ interface RestoredTerminalPayload {
     terminal_id: string;
     tab_id: string;
     tool: RemoteTool;
+    title: string | null;
+    status: TerminalStatus;
 }
 
 interface RestoredSessionPayload {
     ready: RemoteTerminalReady;
     folders: RestoredFolderPayload[];
     terminals: RestoredTerminalPayload[];
+    inventory_synced: boolean;
+    inventory_error: string | null;
 }
 
 /** Format elapsed time since `timestamp` as a short "Xs" / "Xm" / "Xh" string. */
@@ -115,15 +120,23 @@ function RemoteTerminal() {
         terminals, availableTools,
         setLoginStatus, setLoginUrl, setReady, setError, setLastLocalDir, setAvailableTools, resetLogin,
         addFolder, removeFolder, setActiveTab, updateFolderSync,
-        addTerminal, removeTerminal, setActiveTerminal, updateTerminalStatus,
+        addTerminal, removeTerminal, setActiveTerminal, updateTerminalStatus, reconcileSession,
     } = useRemoteTerminalStore();
 
+    const [gitImportOpen, setGitImportOpen] = useState(false);
     const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [isSharing, setIsSharing] = useState(false);
     const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
     const openingTerminalRef = useRef(false);
     const [remoteConnected, setRemoteConnected] = useState(false);
     const [authRequired, setAuthRequired] = useState(false);
+    const [inventoryError, setInventoryError] = useState<string | null>(null);
+    const [renameTarget, setRenameTarget] = useState<string | null>(null);
+    const [renameLabel, setRenameLabel] = useState('');
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [syncChoiceTabId, setSyncChoiceTabId] = useState<string | null>(null);
+    const [closeFolderTabId, setCloseFolderTabId] = useState<string | null>(null);
+    const [isClosingFolder, setIsClosingFolder] = useState(false);
     const describeRemoteError = useCallback((error: unknown): string => {
         const message = String(error);
         if (message.includes('workspace_protocol_not_support')) {
@@ -724,27 +737,21 @@ function RemoteTerminal() {
         });
     }, [activeTabId, activeTab?.activeTerminalId]);
 
-    // Merge a restored/reconnected session into the store. Only ADDS folders
-    // and terminals the store doesn't already know about (reading fresh
-    // state via getState(), not the closed-over snapshot) so calling this
-    // again - e.g. navigating back to this page mid-session, or right after
-    // a fresh login - never duplicates entries already open in this process.
+    // Reconcile account inventory while keeping this device's selected tab.
     const hydrateSession = useCallback((session: RestoredSessionPayload) => {
-        const current = useRemoteTerminalStore.getState();
+        const previous = useRemoteTerminalStore.getState().ready;
+        if (previous && (previous.principal !== session.ready.principal || previous.host !== session.ready.host || previous.ssh_user !== session.ready.ssh_user)) {
+            resetLogin();
+        }
         setReady(session.ready);
         setAuthRequired(false);
         setLoginStatus('logged_in');
-        session.folders.forEach((f) => {
-            if (!current.folders[f.tab_id]) {
-                addFolder({ tabId: f.tab_id, localDir: f.local_dir, slug: f.slug });
-                updateFolderSync(f.tab_id, { filesSynced: f.files_synced });
-            }
-        });
-        session.terminals.forEach((term) => {
-            if (!current.terminals[term.terminal_id]) {
-                addTerminal(term.terminal_id, term.tab_id, term.tool);
-            }
-        });
+        reconcileSession(session);
+        setInventoryError(session.inventory_error
+            ? session.inventory_error.includes('terminal_inventory_not_supported')
+                ? t('remote_terminal.inventory.unsupported')
+                : describeRemoteError(session.inventory_error)
+            : null);
 
         // Which "+ <tool>" buttons to offer. Asked here rather than once at
         // mount because it describes the server we just connected to.
@@ -757,7 +764,7 @@ function RemoteTerminal() {
         // assuming it degrades to "you can still work" instead of "you can do
         // nothing". A tool that is genuinely disabled is still refused by
         // /term/create, so guessing here cannot let anything extra run.
-        invoke<string[]>('remote_terminal_list_tools')
+        if (useRemoteTerminalStore.getState().availableTools.length === 0) invoke<string[]>('remote_terminal_list_tools')
             .then((tools) => {
                 const usable = (tools || []).filter((tool): tool is RemoteTool => tool === 'codex' || tool === 'claude');
                 setAvailableTools(usable.length > 0 ? usable : ['codex']);
@@ -766,7 +773,7 @@ function RemoteTerminal() {
                 console.error('[RemoteTerminal] Failed to list remote tools, falling back to codex:', e);
                 setAvailableTools(['codex']);
             });
-    }, [setReady, setLoginStatus, addFolder, addTerminal, setAvailableTools, updateFolderSync]);
+    }, [setReady, setLoginStatus, setAvailableTools, reconcileSession, resetLogin, describeRemoteError, t]);
 
     // Restore the whole screen once on mount: after a full app relaunch this
     // logs back in (if the persisted key is still valid) and reconnects every
@@ -834,9 +841,36 @@ function RemoteTerminal() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Poll only while this page is visible. Refresh attaches new viewers but
+    // never repaints an existing one or steals the selected tab.
+    useEffect(() => {
+        if (loginStatus !== 'logged_in' || authRequired) return;
+        let disposed = false;
+        let inFlight = false;
+        const refresh = async () => {
+            if (inFlight || disposed || document.visibilityState === 'hidden') return;
+            inFlight = true;
+            try {
+                const session = await invoke<RestoredSessionPayload | null>('remote_terminal_refresh_sessions');
+                if (session && !disposed) hydrateSession(session);
+            } catch (error) {
+                if (!disposed) setInventoryError(describeRemoteError(error));
+            } finally { inFlight = false; }
+        };
+        const interval = setInterval(() => void refresh(), 5000);
+        const onVisible = () => void refresh();
+        document.addEventListener('visibilitychange', onVisible);
+        window.addEventListener('focus', onVisible);
+        return () => {
+            disposed = true;
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisible);
+            window.removeEventListener('focus', onVisible);
+        };
+    }, [loginStatus, authRequired, hydrateSession, describeRemoteError]);
+
     const handleLogin = async () => {
         setError(null);
-        setReady(null);
         setLoginStatus('waiting_sso');
         try {
             await invoke('remote_terminal_start_login');
@@ -862,29 +896,46 @@ function RemoteTerminal() {
             return;
         }
         try {
-            const selected = await openDialog({ directory: true, multiple: false, title: t('remote_terminal.empty_folder_hint') });
+            const selected = await openDialog({ directory: true, multiple: false, title: t('remote_terminal.folder_hint') });
             if (typeof selected !== 'string' || !selected) return;
             setLastLocalDir(selected);
             const result = await invoke<AddFolderResult>('remote_terminal_add_folder', { localDir: selected });
             addFolder({ tabId: result.tab_id, localDir: selected, slug: result.slug });
+            const workspace = await checkWorkspace(result.tab_id);
+            if (workspace?.status === 'download_required') setSyncChoiceTabId(result.tab_id);
         } catch (e) {
-            showToast(String(e).includes('local_dir_not_empty_new_project_required')
-                ? t('remote_terminal.empty_folder_required') : String(e), 'error');
+            showToast(describeRemoteError(e), 'error');
         }
     };
 
+    const handleGitImported = async (result: GitImportResult) => {
+        showToast(t('remote_terminal.git.success'), 'success');
+        try {
+            const session = await invoke<RestoredSessionPayload | null>('remote_terminal_refresh_sessions');
+            if (session) {
+                hydrateSession(session);
+                const imported = session.folders.find((folder) => folder.slug === result.slug);
+                if (imported) {
+                    setActiveTab(imported.tab_id);
+                    setActiveTerminal(imported.tab_id, result.terminal_id);
+                }
+            }
+        } catch (e) { showToast(describeRemoteError(e), 'error'); }
+    };
+
     const handleCloseFolder = async (tabId: string) => {
-        const tab = folders[tabId];
-        const hasRunningTerminals = (tab?.terminalIds.length ?? 0) > 0;
-        if (hasRunningTerminals && !confirm(t('remote_terminal.confirm_close_folder'))) {
-            return;
-        }
+        if (isClosingFolder) return;
+        setIsClosingFolder(true);
         try {
             await invoke('remote_terminal_close_folder', { tabId });
-        } catch {
-            // best-effort
+            removeFolder(tabId);
+            setCloseFolderTabId(null);
+            setSyncChoiceTabId((current) => current === tabId ? null : current);
+        } catch (error) {
+            showToast(describeRemoteError(error), 'error');
+        } finally {
+            setIsClosingFolder(false);
         }
-        removeFolder(tabId);
     };
 
     const checkInFlightRef = useRef(new Map<string, Promise<WorkspaceCheckPayload | null>>());
@@ -892,7 +943,7 @@ function RemoteTerminal() {
         const existing = checkInFlightRef.current.get(tabId);
         if (existing) return existing;
         const current = useRemoteTerminalStore.getState().folders[tabId];
-        if (!current || current.syncStatus === 'syncing') return Promise.resolve(null);
+        if (!current || !current.localDir || current.syncStatus === 'syncing') return Promise.resolve(null);
         updateFolderSync(tabId, { workspaceStatus: 'checking', workspaceError: null });
         const promise = invoke<WorkspaceCheckPayload>('remote_terminal_check_workspace', { tabId })
             .then((result) => {
@@ -944,11 +995,28 @@ function RemoteTerminal() {
         } catch (e) {
             const message = describeRemoteError(e);
             updateFolderSync(tabId, { syncStatus: 'error', syncMessage: message });
-            showToast(message, 'error');
+            if (String(e).includes('download_required') || String(e).includes('session_changed')) {
+                setSyncChoiceTabId(tabId);
+            } else showToast(message, 'error');
         }
         await checkWorkspace(tabId);
         return success;
     }, [describeRemoteError, updateFolderSync, checkWorkspace]);
+
+    const handleBindLocalFolder = async (tabId: string) => {
+        try {
+            const selected = await openDialog({ directory: true, multiple: false, title: t('remote_terminal.inventory.bind_folder') });
+            if (typeof selected !== 'string') return;
+            await invoke('remote_terminal_bind_local_folder', { tabId, localDir: selected });
+            const session = await invoke<RestoredSessionPayload | null>('remote_terminal_refresh_sessions');
+            if (session) hydrateSession(session);
+            const workspace = await checkWorkspace(tabId);
+            if (workspace?.status === 'download_required') setSyncChoiceTabId(tabId);
+        } catch (error) {
+            showToast(String(error).includes('local_dir_not_empty_new_project_required')
+                ? t('remote_terminal.empty_folder_required') : describeRemoteError(error), 'error');
+        }
+    };
 
     // Measure the real terminal size BEFORE the PTY is opened, using a
     // throwaway xterm.js instance (same font metrics as the real terminals)
@@ -992,6 +1060,14 @@ function RemoteTerminal() {
         setIsOpeningTerminal(true);
         try {
             await checkInFlightRef.current.get(tabId);
+            if (folder.localDir) {
+                const workspace = await checkWorkspace(tabId);
+                if (!workspace) return;
+                if (workspace.status === 'download_required') {
+                    setSyncChoiceTabId(tabId);
+                    return;
+                }
+            }
             const { cols, rows } = measureViewport();
             const terminalId = await invoke<string>('remote_terminal_open_terminal', { tabId, tool, cols, rows });
             updateFolderSync(tabId, {
@@ -1005,7 +1081,8 @@ function RemoteTerminal() {
             addTerminal(terminalId, tabId, tool);
         } catch (e) {
             const message = describeRemoteError(e);
-            showToast(message.includes('workspace_files_not_synced_user_sync_unavailable')
+            if (message.includes('download_required')) setSyncChoiceTabId(tabId);
+            else showToast(message.includes('workspace_files_not_synced_user_sync_unavailable')
                 ? t('remote_terminal.sync.files_required')
                 : message.includes('workspace_not_synced:')
                     ? t(`remote_terminal.workspace.${message.split('workspace_not_synced:')[1].trim()}`)
@@ -1020,10 +1097,27 @@ function RemoteTerminal() {
     const handleCloseTerminal = async (terminalId: string) => {
         try {
             await invoke('remote_terminal_close_terminal', { terminalId });
-        } catch {
-            // best-effort
+            removeTerminal(terminalId);
+        } catch (error) {
+            showToast(describeRemoteError(error), 'error');
         }
-        removeTerminal(terminalId);
+    };
+
+    const handleRenameTerminal = (terminalId: string) => {
+        setRenameLabel(useRemoteTerminalStore.getState().terminals[terminalId]?.title || '');
+        setRenameTarget(terminalId);
+    };
+
+    const saveTerminalName = async () => {
+        if (!renameTarget || !renameLabel.trim() || isRenaming) return;
+        setIsRenaming(true);
+        try {
+            await invoke('remote_terminal_rename_terminal', { terminalId: renameTarget, label: renameLabel.trim() });
+            setRenameTarget(null);
+            const session = await invoke<RestoredSessionPayload | null>('remote_terminal_refresh_sessions');
+            if (session) hydrateSession(session);
+        } catch (error) { showToast(describeRemoteError(error), 'error'); }
+        finally { setIsRenaming(false); }
     };
 
     // Shares every terminal currently open under the folder tab that holds
@@ -1168,13 +1262,13 @@ function RemoteTerminal() {
                                             }`}
                                     >
                                         <FolderOpen className="w-3.5 h-3.5" />
-                                        {basename(tab.localDir) || tab.localDir}
+                                        {basename(tab.localDir) || tab.slug}
                                         <span
                                             role="button"
                                             title={t('remote_terminal.close_folder_tooltip')}
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                handleCloseFolder(tabId);
+                                                setCloseFolderTabId(tabId);
                                             }}
                                             className="rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
                                         >
@@ -1185,11 +1279,16 @@ function RemoteTerminal() {
                             })}
                             <button
                                 onClick={handleAddFolder}
-                                title={t('remote_terminal.empty_folder_hint')}
+                                title={t('remote_terminal.folder_hint')}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors shrink-0"
                             >
                                 <Plus className="w-3.5 h-3.5" />
                                 {t('remote_terminal.add_folder_button')}
+                            </button>
+                            <button onClick={() => setGitImportOpen(true)} disabled={authRequired || availableTools.length === 0}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors shrink-0 disabled:opacity-40">
+                                <GitBranch className="w-3.5 h-3.5" />
+                                {t('remote_terminal.git.add_button')}
                             </button>
                         </div>
                         {ready && (
@@ -1207,6 +1306,9 @@ function RemoteTerminal() {
                         )}
                     </div>
 
+                    {inventoryError && (
+                        <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{inventoryError}</p>
+                    )}
                     {authRequired && (
                         <div role="alert" className="flex items-center gap-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 px-4 py-3">
                             <p className="flex-1 text-xs text-amber-700 dark:text-amber-300">
@@ -1238,6 +1340,11 @@ function RemoteTerminal() {
                                 <Plus className="w-4 h-4" />
                                 {t('remote_terminal.add_folder_button')}
                             </button>
+                            <button onClick={() => setGitImportOpen(true)} disabled={authRequired || availableTools.length === 0}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors shrink-0 disabled:opacity-40">
+                                <GitBranch className="w-3.5 h-3.5" />
+                                {t('remote_terminal.git.add_button')}
+                            </button>
                         </div>
                     )}
 
@@ -1258,13 +1365,13 @@ function RemoteTerminal() {
                                 is allowed to move the terminal. */}
                             <div className="shrink-0 flex items-center gap-3 min-h-16 rounded-xl border border-gray-200 dark:border-base-200 px-4 py-2" role="status" aria-live="polite">
                                 <span className={`text-xs flex-1 ${['download_required', 'commit_required', 'conflict', 'error'].includes(activeTab.workspaceStatus) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'}`} title={activeTab.workspaceError || undefined}>
-                                    {activeTab.workspaceError || (
+                                    {!activeTab.localDir ? t('remote_terminal.inventory.remote_only') : activeTab.workspaceError || (
                                         !activeTab.filesSynced && ['unknown', 'initialization_required', 'upload_required'].includes(activeTab.workspaceStatus) ? t('remote_terminal.sync.new_project')
                                             : t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)
                                     )}
                                 </span>
                                 {activeTab.workspaceStatus === 'download_required' && (
-                                    <button onClick={() => handleSyncFolder(activeTab.tabId, true)} disabled={activeTab.syncStatus === 'syncing'} className="text-xs rounded-full bg-blue-600 text-white px-3 py-1.5 disabled:opacity-40">
+                                    <button onClick={() => setSyncChoiceTabId(activeTab.tabId)} disabled={activeTab.syncStatus === 'syncing'} className="text-xs rounded-full bg-blue-600 text-white px-3 py-1.5 disabled:opacity-40">
                                         {t('remote_terminal.workspace.download_button')}
                                     </button>
                                 )}
@@ -1277,15 +1384,25 @@ function RemoteTerminal() {
                                     <FolderOpen className="w-4 h-4 text-gray-400 shrink-0" />
                                     <span
                                         className="text-sm text-gray-800 dark:text-gray-200 truncate"
-                                        title={activeTab.localDir}
+                                        title={activeTab.localDir || t('remote_terminal.inventory.remote_workspace', { slug: activeTab.slug })}
                                     >
-                                        {activeTab.localDir}
+                                        {activeTab.localDir || t('remote_terminal.inventory.remote_workspace', { slug: activeTab.slug })}
                                     </span>
                                     <span className="text-xs text-gray-400 shrink-0">({activeTab.slug})</span>
                                 </div>
+                                {!activeTab.localDir && (
+                                    <button
+                                        onClick={() => void handleBindLocalFolder(activeTab.tabId)}
+                                        disabled={authRequired}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-base-200 disabled:opacity-40"
+                                    >
+                                        <FolderOpen className="w-3.5 h-3.5" />
+                                        {t('remote_terminal.inventory.bind_folder')}
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => handleSyncFolder(activeTab.tabId)}
-                                    disabled={authRequired || activeTab.syncStatus === 'syncing' || !['synced', 'initialization_required', 'confirmation_required', 'upload_required'].includes(activeTab.workspaceStatus)}
+                                    disabled={!activeTab.localDir || authRequired || activeTab.syncStatus === 'syncing' || !['synced', 'initialization_required', 'confirmation_required', 'upload_required'].includes(activeTab.workspaceStatus)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                                 >
                                     <RefreshCw className={`w-3.5 h-3.5 ${activeTab.syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
@@ -1326,7 +1443,7 @@ function RemoteTerminal() {
                                                 }`}
                                         >
                                             <TerminalIcon className="w-3 h-3" />
-                                            {t('remote_terminal.terminal_tab_label', { index: index + 1 })}
+                                            {term?.title || t('remote_terminal.terminal_tab_label', { index: index + 1 })}
                                             {term && (
                                                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/10 dark:bg-white/10 text-gray-600 dark:text-gray-300">
                                                     {t(`remote_terminal.tool.${term.tool}`)}
@@ -1337,6 +1454,14 @@ function RemoteTerminal() {
                                                     {t('remote_terminal.terminal_closed_badge')}
                                                 </span>
                                             )}
+                                            <span
+                                                role="button"
+                                                title={t('remote_terminal.inventory.rename')}
+                                                onClick={(event) => { event.stopPropagation(); void handleRenameTerminal(terminalId); }}
+                                                className="rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
+                                            >
+                                                <Pencil className="w-3 h-3" />
+                                            </span>
                                             <span
                                                 role="button"
                                                 title={t('remote_terminal.close_terminal_tooltip')}
@@ -1406,6 +1531,63 @@ function RemoteTerminal() {
                     )}
                 </>
             )}
+            <GitImportModal open={gitImportOpen} tools={availableTools} onClose={() => setGitImportOpen(false)}
+                onImported={handleGitImported} describeError={describeRemoteError} />
+            <Modal
+                open={syncChoiceTabId !== null && !!folders[syncChoiceTabId]}
+                title={t('remote_terminal.workspace.download_title')}
+                okText={t('remote_terminal.workspace.download_button')}
+                cancelText={t('remote_terminal.workspace.download_later')}
+                onCancel={() => {
+                    if (!syncChoiceTabId || folders[syncChoiceTabId]?.syncStatus !== 'syncing') setSyncChoiceTabId(null);
+                }}
+                onOk={async () => {
+                    if (syncChoiceTabId && await handleSyncFolder(syncChoiceTabId, true)) setSyncChoiceTabId(null);
+                }}
+                confirmLoading={!!syncChoiceTabId && folders[syncChoiceTabId]?.syncStatus === 'syncing'}
+                closable={!syncChoiceTabId || folders[syncChoiceTabId]?.syncStatus !== 'syncing'}
+                cancelButtonProps={{ disabled: !!syncChoiceTabId && folders[syncChoiceTabId]?.syncStatus === 'syncing' }}
+                maskClosable={false}
+                centered
+            >
+                <p>{t('remote_terminal.workspace.download_prompt')}</p>
+                <p className="mt-3 break-all text-gray-500">{syncChoiceTabId && folders[syncChoiceTabId]?.localDir}</p>
+            </Modal>
+            <Modal
+                open={closeFolderTabId !== null && !!folders[closeFolderTabId]}
+                title={t('remote_terminal.close_folder_title')}
+                okText={t('remote_terminal.close_folder_button')}
+                okButtonProps={{ danger: true, disabled: !!closeFolderTabId && folders[closeFolderTabId]?.syncStatus === 'syncing' }}
+                onOk={() => closeFolderTabId && void handleCloseFolder(closeFolderTabId)}
+                onCancel={() => { if (!isClosingFolder) setCloseFolderTabId(null); }}
+                confirmLoading={isClosingFolder}
+                cancelButtonProps={{ disabled: isClosingFolder }}
+                closable={!isClosingFolder}
+                maskClosable={false}
+                centered
+            >
+                <p>{t('remote_terminal.confirm_close_folder')}</p>
+            </Modal>
+            <Modal
+                open={renameTarget !== null}
+                title={t('remote_terminal.inventory.rename')}
+                onCancel={() => { if (!isRenaming) setRenameTarget(null); }}
+                onOk={() => void saveTerminalName()}
+                confirmLoading={isRenaming}
+                okButtonProps={{ disabled: !renameLabel.trim() }}
+                centered
+                destroyOnHidden
+            >
+                <Input
+                    aria-label={t('remote_terminal.inventory.rename_prompt')}
+                    placeholder={t('remote_terminal.inventory.rename_prompt')}
+                    value={renameLabel}
+                    maxLength={120}
+                    onChange={(event) => setRenameLabel(event.target.value)}
+                    onPressEnter={() => void saveTerminalName()}
+                    autoFocus
+                />
+            </Modal>
             <Modal
                 open={shareUrl !== null}
                 title={t('remote_terminal.share_qr_title')}

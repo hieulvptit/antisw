@@ -1396,6 +1396,49 @@
         "hint_curfew": "Leave empty to disable. Based on server time."
     },
     "remote_terminal": {
+        "git": {
+            "add_button": "Import from Git",
+            "import_button": "Clone and open terminal",
+            "title": "Import repository from Git",
+            "description": "Clone into a new server workspace and open a terminal. You can choose a local folder afterward to download the files.",
+            "repo_url": "Repository URL (HTTPS)",
+            "tool": "Open with",
+            "username": "Git username",
+            "pat": "Personal Access Token (PAT)",
+            "commit_name": "Commit name",
+            "commit_email": "Commit email",
+            "saved_pat": "A PAT is saved for {{host}}. Leave the token empty to reuse it.",
+            "new_pat": "Enter Git credentials for {{host}}. The PAT is saved on the server for your SSO account.",
+            "pat_keep": "Use saved PAT",
+            "pat_required": "Enter PAT with repository read access",
+            "host_not_allowed": "Allowed Git hosts: {{hosts}}",
+            "invalid_url": "Enter an HTTPS repository URL without a username or token.",
+            "cloning": "Cloning on the server…",
+            "success": "Repository imported successfully.",
+            "errors": {
+                "git_credentials_not_found": "No saved PAT for this Git host. Enter your Git credentials.",
+                "git_command_failed": "Clone failed. Check the repository URL, PAT permissions and server connection.",
+                "git_host_not_allowed": "This Git host is not enabled on the server.",
+                "git_sandbox_required": "Git import requires the Git sandbox to be enabled on the server.",
+                "git_credentials_unavailable": "The server Git credential store is unavailable.",
+                "git_operation_timeout": "Clone timed out. Retry or check the server.",
+                "git_import_tool_not_allowed": "This terminal tool is not available for your account.",
+                "git_protocol_not_supported": "The server needs updating to support Git import.",
+                "git_service_unavailable": "Cannot reach the Git service. Check the server connection.",
+                "git_pat_required": "Enter a PAT to save these Git credentials.",
+                "invalid_git_credentials": "Check your Git username, PAT, commit name and email.",
+                "invalid_git_repo_url": "Enter a valid HTTPS repository URL without credentials.",
+                "git_sandbox_unavailable": "The server Git sandbox is unavailable."
+            }
+        },
+        "inventory": {
+            "bind_folder": "Choose local folder",
+            "unsupported": "This server does not support syncing terminal tabs across devices yet.",
+            "remote_only": "Remote workspace. File sync needs a local folder on this device.",
+            "remote_workspace": "Remote workspace: {{slug}}",
+            "rename": "Rename terminal",
+            "rename_prompt": "Terminal name (up to 120 characters)"
+        },
         "auth": {
             "required": "The terminal service rejected your saved SSO credentials. Sign in again to renew access; your folder tabs will be kept.",
             "login_again": "Sign in again"
@@ -1412,6 +1455,9 @@
             "commit_required": "This workspace belongs to another client. Commit and push changes on both clients before syncing.",
             "conflict": "Local and remote changes conflict. Commit and push local changes, then reconcile with the server before syncing.",
             "error": "Could not verify the workspace. Check the connection and retry; the server may need updating.",
+            "download_title": "Sync workspace from server",
+            "download_prompt": "The server or session has changed. Sync from the server to update this local folder before uploading or opening a terminal. Server files will be mirrored into the local folder; conflicting local changes must be resolved first.",
+            "download_later": "Later",
             "download_button": "Sync from server",
             "check_button": "Check again"
         },
@@ -1447,7 +1493,7 @@
         "choose_folder_button": "Choose folder",
         "sync_now_button": "Sync now",
         "sync": {
-            "new_project": "New project not synced yet. Click Codex or Claude to sync the empty workspace to the server and open a terminal.",
+            "new_project": "Project not synced yet. Click Codex or Claude to sync the local folder to the server and open a terminal.",
             "synced": "Files synced to server",
             "idle": "Not synced yet",
             "syncing": "Syncing...",
@@ -1459,8 +1505,10 @@
         },
         "add_folder_button": "Add folder",
         "close_folder_tooltip": "Close folder tab",
-        "confirm_close_folder": "This folder has running terminals. Close it and stop all of them?",
-        "empty_state_add_folder": "Add an empty folder for a new project, sync it to the server, then open a terminal.",
+        "close_folder_title": "Close folder and free server storage",
+        "close_folder_button": "Close and delete workspace",
+        "confirm_close_folder": "Close this folder? All terminals in this workspace, including those on other devices, will be stopped and the server working directory will be deleted. Sync any files you need to keep to your device first. Local files will be kept.",
+        "empty_state_add_folder": "Add a project folder, sync it to the server, then open a terminal.",
         "terminal_tab_label": "Terminal {{index}}",
         "terminal_closed_badge": "closed",
         "share_terminal_button": "Share",
@@ -1475,7 +1523,7 @@
             "codex": "Codex",
             "claude": "Claude Code"
         },
-        "empty_folder_hint": "Choose an empty folder for a new project",
-        "empty_folder_required": "Only empty folders can be added for new projects. The selected folder contains files or subfolders (including hidden files)."
+        "folder_hint": "Choose a new or existing project folder",
+        "empty_folder_required": "Choose an empty local folder to download this remote workspace. The selected folder contains files or subfolders (including hidden files)."
     }
 }

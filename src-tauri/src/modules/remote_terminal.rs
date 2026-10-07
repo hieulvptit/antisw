@@ -180,6 +180,10 @@ struct PersistedTerminal {
     terminal_id: String,
     tab_id: String,
     tool: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    remote_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -267,6 +271,14 @@ fn save_persisted_state(state: &PersistedState) {
 fn persist_connection(info: &ConnectionInfo) {
     let Ok(_guard) = PERSISTED_STATE_LOCK.lock() else { return };
     let mut state = load_persisted_state();
+    if state.connection.as_ref().is_some_and(|old| old.principal != info.principal || old.host != info.host || old.ssh_user != info.ssh_user) {
+        for terminal in &state.terminals {
+            crate::modules::remote_terminal_http::detach_terminal(&terminal.terminal_id);
+        }
+        state.folders.clear();
+        state.terminals.clear();
+        if let Ok(mut lock) = folders().lock() { lock.clear(); }
+    }
     state.connection = Some(PersistedConnection {
         priv_key_path: info.priv_key_path.clone(),
         host: info.host.clone(),
@@ -311,6 +323,8 @@ fn persist_add_terminal(terminal_id: &str, tab_id: &str, tool: &str) {
         terminal_id: terminal_id.to_string(),
         tab_id: tab_id.to_string(),
         tool: tool.to_string(),
+        title: None,
+        remote_status: None,
     });
     save_persisted_state(&state);
 }
@@ -404,8 +418,9 @@ fn generate_ephemeral_keypair() -> AppResult<(PathBuf, String)> {
         .to_str()
         .ok_or_else(|| AppError::RemoteTerminal("invalid_key_path".to_string()))?;
 
-    let output = std::process::Command::new("ssh-keygen")
-        .args(["-t", "ed25519", "-N", "", "-f", priv_str])
+    let priv_str = crate::modules::remote_sync_tools::posix_path(std::path::Path::new(priv_str));
+    let output = crate::modules::remote_sync_tools::command("ssh-keygen")
+        .args(["-t", "ed25519", "-N", "", "-f", &priv_str])
         .output()
         .map_err(|e| AppError::RemoteTerminal(format!("failed_to_run_ssh_keygen: {}", e)))?;
 
@@ -708,6 +723,18 @@ fn get_connection_info() -> AppResult<ConnectionInfo> {
 // Folder tabs
 // ============================================================================
 
+fn validate_project_folder(path: &std::path::Path) -> AppResult<()> {
+    if !path.is_dir() {
+        return Err(AppError::RemoteTerminal(format!(
+            "local_dir_not_found_or_not_a_directory: {}",
+            path.display()
+        )));
+    }
+    std::fs::read_dir(path)
+        .map_err(|e| AppError::RemoteTerminal(format!("local_dir_unreadable: {}", e)))?;
+    Ok(())
+}
+
 fn validate_empty_project_folder(path: &std::path::Path) -> AppResult<()> {
     let mut entries = std::fs::read_dir(path)
         .map_err(|e| AppError::RemoteTerminal(format!("local_dir_unreadable: {}", e)))?;
@@ -720,7 +747,23 @@ fn validate_empty_project_folder(path: &std::path::Path) -> AppResult<()> {
 
 #[cfg(test)]
 mod new_project_folder_tests {
-    use super::validate_empty_project_folder;
+    use super::{validate_empty_project_folder, validate_project_folder};
+
+    #[test]
+    fn existing_projects_accept_files_and_hidden_subfolders() {
+        let path = std::env::temp_dir().join(format!("remote-project-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&path).unwrap();
+        assert!(validate_project_folder(&path).is_ok());
+        let file = path.join("README.md");
+        std::fs::write(&file, "Existing project").unwrap();
+        let hidden = path.join(".git");
+        std::fs::create_dir(&hidden).unwrap();
+        assert!(validate_project_folder(&path).is_ok());
+        assert!(validate_project_folder(&file).is_err());
+        assert!(validate_empty_project_folder(&path).is_err());
+        std::fs::remove_dir_all(&path).unwrap();
+        assert!(validate_project_folder(&path).is_err());
+    }
 
     #[test]
     fn accepts_only_empty_folders_including_hidden_entries() {
@@ -754,14 +797,7 @@ pub fn add_folder(local_dir: String) -> AppResult<AddFolderResult> {
         return Err(AppError::RemoteTerminal("local_dir_is_empty".to_string()));
     }
     let path = std::path::Path::new(&local_dir);
-    if !path.is_dir() {
-        return Err(AppError::RemoteTerminal(format!(
-            "local_dir_not_found_or_not_a_directory: {}",
-            local_dir
-        )));
-    }
-
-    validate_empty_project_folder(path)?;
+    validate_project_folder(path)?;
     let slug = derive_slug(&local_dir);
     let tab_id = uuid::Uuid::new_v4().to_string();
 
@@ -783,20 +819,33 @@ pub fn add_folder(local_dir: String) -> AppResult<AddFolderResult> {
     Ok(AddFolderResult { tab_id, slug })
 }
 
-/// Close a folder tab: kill every terminal open under it, then drop it.
-pub fn close_folder(tab_id: String) -> AppResult<()> {
-    let terminal_ids = {
-        let mut lock = folders()
+/// Close the account's entire remote workspace before forgetting its local tab.
+pub async fn close_folder(tab_id: String) -> AppResult<()> {
+    // Keep the same lock order as open_terminal (terminal, then workspace).
+    let _guard = terminal_operations().lock().await;
+    let _workspace_guard = WORKSPACE_OPERATIONS.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
+    let (slug, terminal_ids) = {
+        let lock = folders()
             .lock()
             .map_err(|_| AppError::RemoteTerminal("folders_state_lock_poisoned".to_string()))?;
-        lock.remove(&tab_id).map(|tab| tab.terminals).unwrap_or_default()
+        let Some(tab) = lock.get(&tab_id) else { return Ok(()); };
+        (tab.slug.clone(), tab.terminals.clone())
     };
+    let info = get_connection_info()?;
+    // The server owns inventory and performs stop + delete under its locks,
+    // including terminals this device has not hydrated yet. No local path or
+    // fingerprint is required, so remote-only tabs can also be cleaned up.
+    crate::modules::remote_terminal_http::workspace_request(
+        &info.priv_key_path, &info.ssh_user, "close",
+        &serde_json::json!({ "folder": info.principal, "slug": slug }),
+    ).await?;
 
     for terminal_id in terminal_ids {
-        let _ = close_terminal(&terminal_id);
+        crate::modules::remote_terminal_http::detach_terminal(&terminal_id);
+        persist_remove_terminal(&terminal_id);
     }
+    if let Ok(mut lock) = folders().lock() { lock.remove(&tab_id); }
     persist_remove_folder(&tab_id);
-
     Ok(())
 }
 
@@ -839,6 +888,9 @@ fn resolve_rsync_binary() -> AppResult<String> {
             Ok(output) => output,
             Err(_) => continue,
         };
+        if !output.status.success() {
+            continue;
+        }
 
         let banner = format!(
             "{}{}",
@@ -865,7 +917,88 @@ fn resolve_rsync_binary() -> AppResult<String> {
 
 #[cfg(not(target_os = "macos"))]
 fn resolve_rsync_binary() -> AppResult<String> {
-    Ok("rsync".to_string())
+    let output = crate::modules::remote_sync_tools::command("rsync")
+        .arg("--version").output()
+        .map_err(|e| AppError::RemoteTerminal(format!("bundled_rsync_unavailable: {}. Reinstall the app to restore its sync tools.", e)))?;
+    if !output.status.success() {
+        return Err(AppError::RemoteTerminal(format!("bundled_rsync_unavailable: {}", String::from_utf8_lossy(&output.stderr))));
+    }
+    Ok(crate::modules::remote_sync_tools::binary("rsync").to_string_lossy().into_owned())
+}
+
+/// Provision the sync dependency before asking the server for a transfer
+/// ticket, so a Homebrew install cannot consume the ticket's lifetime.
+#[cfg(target_os = "macos")]
+async fn ensure_rsync_binary(app_handle: &AppHandle, tab_id: &str) -> AppResult<String> {
+    let resolve = || async {
+        tokio::task::spawn_blocking(resolve_rsync_binary)
+            .await
+            .map_err(|e| AppError::RemoteTerminal(format!("rsync_detection_failed: {}", e)))?
+    };
+    if let Ok(binary) = resolve().await {
+        return Ok(binary);
+    }
+
+    let mut brew = None;
+    for candidate in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew", "brew"] {
+        if candidate.starts_with('/') && !std::path::Path::new(candidate).is_file() {
+            continue;
+        }
+        let probe = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            tokio::process::Command::new(candidate)
+                .arg("--version")
+                .stdin(Stdio::null())
+                .kill_on_drop(true)
+                .output(),
+        ).await;
+        if matches!(probe, Ok(Ok(ref output)) if output.status.success()) {
+            brew = Some(candidate);
+            break;
+        }
+    }
+    let brew = brew.ok_or_else(|| AppError::RemoteTerminal(
+        "rsync_auto_install_unavailable: Homebrew is not installed. Install Homebrew, then retry sync to install rsync automatically.".into()
+    ))?;
+
+    let _ = app_handle.emit("remote-terminal://sync-output", SyncOutputPayload {
+        tab_id: tab_id.to_string(),
+        line: "Installing rsync…".into(),
+    });
+    crate::modules::logger::log_info("remote_terminal: installing missing rsync via Homebrew");
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(600),
+        tokio::process::Command::new(brew)
+            .args(["install", "rsync"])
+            .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+            .env("NONINTERACTIVE", "1")
+            .stdin(Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    ).await
+        .map_err(|_| AppError::RemoteTerminal(
+            "rsync_install_timeout: Installation timed out after 10 minutes. Run brew install rsync in Terminal, then retry sync.".into()
+        ))?
+        .map_err(|e| AppError::RemoteTerminal(format!("rsync_install_failed: {}", e)))?;
+    if !output.status.success() {
+        let details = format!("{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        crate::modules::logger::log_error(&format!("remote_terminal: rsync installation failed: {}", details.trim()));
+        return Err(AppError::RemoteTerminal(format!(
+            "rsync_install_failed: {}. Run brew install rsync in Terminal, then retry sync.",
+            details.trim()
+        )));
+    }
+    let binary = resolve().await?;
+    let _ = app_handle.emit("remote-terminal://sync-output", SyncOutputPayload {
+        tab_id: tab_id.to_string(), line: String::new(),
+    });
+    Ok(binary)
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn ensure_rsync_binary(_app_handle: &AppHandle, _tab_id: &str) -> AppResult<String> {
+    tokio::task::spawn_blocking(resolve_rsync_binary).await
+        .map_err(|e| AppError::RemoteTerminal(format!("rsync_detection_failed: {}", e)))?
 }
 
 /// One-way mirror a folder tab's local directory into its own remote
@@ -906,6 +1039,9 @@ async fn workspace_body(tab_id: &str) -> AppResult<serde_json::Value> {
         let tab = lock.get(tab_id).ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?;
         (tab.local_dir.clone(), tab.slug.clone())
     };
+    if local_dir.is_empty() {
+        return Err(AppError::RemoteTerminal("workspace_local_folder_required".into()));
+    }
     let info = get_connection_info()?;
     let client_id = crate::modules::tracking::get_device_id().map_err(AppError::RemoteTerminal)?;
     let session_id = WORKSPACE_SESSION_ID.get_or_init(|| uuid::Uuid::new_v4().to_string()).clone();
@@ -961,6 +1097,7 @@ fn persist_workspace_receipt(tab_id: &str, receipt: &serde_json::Value) -> AppRe
 
 async fn sync_folder_direction(app_handle: AppHandle, tab_id: String, download: bool) -> AppResult<()> {
     let _guard = WORKSPACE_OPERATIONS.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
+    let rsync_binary = ensure_rsync_binary(&app_handle, &tab_id).await?;
     let mut body = workspace_body(&tab_id).await?;
     body["direction"] = serde_json::json!(if download { "download" } else { "upload" });
     let connection = get_connection_info()?;
@@ -991,17 +1128,20 @@ async fn sync_folder_direction(app_handle: AppHandle, tab_id: String, download: 
     }
 
     let info = get_connection_info()?;
-    let rsync_binary = resolve_rsync_binary()?;
 
+    let quote = |value: String| crate::modules::remote_sync_tools::rsync_quote(&value);
     let ssh_opts = format!(
-        "ssh -i {} -o StrictHostKeyChecking=accept-new -o BatchMode=yes",
-        format!("'{}'", info.priv_key_path.display().to_string().replace('\'', "'\"'\"'"))
+        "{} -i {} -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o UserKnownHostsFile={}",
+        quote(crate::modules::remote_sync_tools::posix_path(&crate::modules::remote_sync_tools::binary("ssh"))),
+        quote(crate::modules::remote_sync_tools::posix_path(&info.priv_key_path)),
+        quote(crate::modules::remote_sync_tools::posix_path(&get_remote_terminal_dir()?.join("known_hosts")))
     );
 
     // A trailing slash on the source means "copy the CONTENTS of local_dir"
     // (rsync semantics), matching the remote subdirectory mirroring the
     // directory's contents rather than nesting it one level deeper.
-    let source = format!("{}/", local_dir.trim_end_matches('/'));
+    let local_sync_path = crate::modules::remote_sync_tools::posix_path(local_path);
+    let source = format!("{}/", local_sync_path.trim_end_matches('/'));
     // The destination must be a RELATIVE path (just "<slug>/"), NOT prefixed
     // with `workspace_root`. The remote side is confined by `rrsync
     // <workspace_root>/<username>/`, which already PREPENDS that
@@ -1027,7 +1167,12 @@ async fn sync_folder_direction(app_handle: AppHandle, tab_id: String, download: 
         },
     );
 
-    let mut child = tokio::process::Command::new(&rsync_binary)
+    #[cfg(not(target_os = "macos"))]
+    let mut child = crate::modules::remote_sync_tools::async_command("rsync");
+    // macOS may select Homebrew outside PATH; preserve its resolved binary.
+    #[cfg(target_os = "macos")]
+    let mut child = tokio::process::Command::new(&rsync_binary);
+    let mut child = child
         .arg("-azc")
         .arg("--delete")
         .arg("--rsync-path")
@@ -1199,34 +1344,30 @@ pub async fn open_terminal(
     cols: u16,
     rows: u16,
 ) -> AppResult<String> {
+    let _guard = terminal_operations().lock().await;
     validate_tool(&tool)?;
+    let remote_only = folders().lock()
+        .map_err(|_| AppError::RemoteTerminal("folders_state_lock_poisoned".into()))?
+        .get(&tab_id).ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?
+        .local_dir.is_empty();
     let persisted = load_persisted_state();
-    if !persisted.folders.iter().any(|f| f.tab_id == tab_id && f.baseline_fingerprint.is_some()) {
-        // New projects have nothing to upload yet, but still need a real
-        // server sync receipt before a terminal can use their workspace.
-        // Recheck emptiness: files may have been added since Add folder.
-        let local_dir = folders()
-            .lock()
-            .map_err(|_| AppError::RemoteTerminal("folders_state_lock_poisoned".into()))?
-            .get(&tab_id)
-            .ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?
-            .local_dir.clone();
-        validate_empty_project_folder(std::path::Path::new(&local_dir))
-            .map_err(|_| AppError::RemoteTerminal("workspace_files_not_synced_user_sync_unavailable".into()))?;
+    if !remote_only && !persisted.folders.iter().any(|f| f.tab_id == tab_id && f.baseline_fingerprint.is_some()) {
+        // Both new and existing projects need a server sync receipt before
+        // opening a terminal. Sync preparation checks remote conflicts.
         sync_folder(app_handle.clone(), tab_id.clone()).await?;
     }
-    let workspace = check_workspace(tab_id.clone()).await?;
-    if workspace.status != "synced" {
-        return Err(AppError::RemoteTerminal(format!("workspace_not_synced: {}", workspace.status)));
+    if !remote_only {
+        let workspace = check_workspace(tab_id.clone()).await?;
+        if workspace.status != "synced" {
+            return Err(AppError::RemoteTerminal(format!("workspace_not_synced: {}", workspace.status)));
+        }
     }
     let terminal_id = uuid::Uuid::new_v4().to_string();
     open_terminal_inner(app_handle, tab_id, tool, terminal_id, cols, rows).await
 }
 
-/// Shared by a brand-new terminal (`open_terminal`, fresh uuid) and a
-/// restored one (`restore_session`, reusing the persisted `terminal_id` so
-/// the remote dispatch script attaches to the `tmux` session it already has
-/// running instead of starting the tool over).
+/// Create a new terminal. Restore uses attach_terminal directly so an
+/// ended session is never recreated by opening the application.
 async fn open_terminal_inner(
     app_handle: AppHandle,
     tab_id: String,
@@ -1311,6 +1452,27 @@ async fn open_terminal_inner(
     Ok(terminal_id)
 }
 
+pub async fn list_git_credentials() -> AppResult<serde_json::Value> {
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::git_request(&info.priv_key_path, &info.ssh_user, reqwest::Method::GET, "credentials", &serde_json::Value::Null).await
+}
+
+pub async fn save_git_credentials(credential: serde_json::Value) -> AppResult<()> {
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::git_request(&info.priv_key_path, &info.ssh_user, reqwest::Method::PUT, "credentials", &credential).await?;
+    Ok(())
+}
+
+pub async fn import_git_repository(repo_url: String, tool: String) -> AppResult<serde_json::Value> {
+    let _guard = terminal_operations().lock().await;
+    validate_tool(&tool)?;
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::git_request(
+        &info.priv_key_path, &info.ssh_user, reqwest::Method::POST, "import",
+        &serde_json::json!({ "repo_url": repo_url, "tool": tool }),
+    ).await
+}
+
 /// Which remote CLIs this server offers, so the UI only shows buttons for
 /// tools that actually exist there (claude is off by default server-side).
 pub async fn list_tools() -> AppResult<Vec<String>> {
@@ -1347,7 +1509,14 @@ pub async fn resize(
 /// Stop streaming a terminal, ask the server to end its tmux session, and
 /// drop it from its folder tab's list. Does not attempt to reconnect - the
 /// frontend decides whether to open a fresh terminal.
-pub fn close_terminal(terminal_id: &str) -> AppResult<()> {
+pub async fn close_terminal(terminal_id: &str) -> AppResult<()> {
+    let _guard = terminal_operations().lock().await;
+    close_terminal_inner(terminal_id).await
+}
+
+async fn close_terminal_inner(terminal_id: &str) -> AppResult<()> {
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::kill_terminal(&info.priv_key_path, &info.ssh_user, terminal_id).await?;
     let tab_id = crate::modules::remote_terminal_http::detach_terminal(terminal_id);
 
     if let Some(tab_id) = tab_id {
@@ -1362,7 +1531,6 @@ pub fn close_terminal(terminal_id: &str) -> AppResult<()> {
     // dropping (a bare disconnect, e.g. the app quitting), which
     // deliberately leaves the persisted entry so `restore_session` can
     // reattach to whatever's still running remotely.
-    spawn_remote_kill(terminal_id.to_string());
     persist_remove_terminal(terminal_id);
 
     Ok(())
@@ -1452,33 +1620,6 @@ pub async fn get_share_link(
     Ok(share_url.to_string())
 }
 
-/// Best-effort: ask the server to end the backing `tmux` session for
-/// `terminal_id` (protocol: SSH command `"kill <terminal_id>"`, see the
-/// module doc comment) so it doesn't linger forever just because the user
-/// explicitly closed the tab. Fire-and-forget - never blocks the caller and
-/// never surfaces its own errors, since a failure here just means the
-/// remote session outlives this close until it's reaped some other way.
-fn spawn_remote_kill(terminal_id: String) {
-    let Ok(info) = get_connection_info() else { return };
-    // Over HTTPS for the same reason creation is: ssh is not reachable from
-    // every network the app runs on, and a terminal the user explicitly closed
-    // should still be torn down remotely when it isn't.
-    tokio::spawn(async move {
-        if let Err(e) = crate::modules::remote_terminal_http::kill_terminal(
-            &info.priv_key_path,
-            &info.ssh_user,
-            &terminal_id,
-        )
-        .await
-        {
-            crate::modules::logger::log_warn(&format!(
-                "remote_terminal: best-effort remote kill for terminal {} failed: {}",
-                terminal_id, e
-            ));
-        }
-    });
-}
-
 // ============================================================================
 // Session restore (full app relaunch, or navigating back to the page
 // mid-session)
@@ -1497,6 +1638,8 @@ pub struct RestoredTerminal {
     pub terminal_id: String,
     pub tab_id: String,
     pub tool: String,
+    pub title: Option<String>,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1504,6 +1647,8 @@ pub struct RestoredSession {
     pub ready: RemoteTerminalReady,
     pub folders: Vec<RestoredFolder>,
     pub terminals: Vec<RestoredTerminal>,
+    pub inventory_synced: bool,
+    pub inventory_error: Option<String>,
 }
 
 /// Rebuild the whole remote-terminal screen: after a full app relaunch this
@@ -1513,12 +1658,24 @@ pub struct RestoredSession {
 /// terminals that dropped their local PTY while the page was unmounted (no
 /// listener around to react to their `closed` event).
 ///
-/// Returns `Ok(None)` when there's nothing to restore (never logged in, or
-/// the persisted private key file is gone) - the frontend falls back to the
-/// login button as usual. A single terminal failing to reconnect (dead
-/// network, remote tmux session gone) never fails the whole call - it's
-/// just left out of the result.
+/// Returns `Ok(None)` without a cached login key. The account inventory is
+/// authoritative when supported; failed inventory requests preserve local
+/// tabs and report an error. Failed attaches stay visible for later retry.
 pub async fn restore_session(app_handle: AppHandle) -> AppResult<Option<RestoredSession>> {
+    restore_session_inner(app_handle, true).await
+}
+
+pub async fn refresh_sessions(app_handle: AppHandle) -> AppResult<Option<RestoredSession>> {
+    restore_session_inner(app_handle, false).await
+}
+
+static TERMINAL_OPERATIONS: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+fn terminal_operations() -> &'static tokio::sync::Mutex<()> {
+    TERMINAL_OPERATIONS.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+async fn restore_session_inner(app_handle: AppHandle, repaint: bool) -> AppResult<Option<RestoredSession>> {
+    let _guard = terminal_operations().lock().await;
     let already_connected = connection_info()
         .lock()
         .map_err(|_| AppError::RemoteTerminal("connection_state_lock_poisoned".to_string()))?
@@ -1562,6 +1719,11 @@ pub async fn restore_session(app_handle: AppHandle) -> AppResult<Option<Restored
     }
 
     let info = get_connection_info()?;
+    let (inventory_synced, inventory_error) = match crate::modules::remote_terminal_http::list_account_terminals(&info.priv_key_path, &info.ssh_user).await {
+        Ok(Some(inventory)) => { reconcile_inventory(inventory)?; (true, None) },
+        Ok(None) => (false, Some("terminal_inventory_not_supported".to_string())),
+        Err(e) => (false, Some(e.to_string())),
+    };
     let persisted = load_persisted_state();
 
     let mut restored_terminals = Vec::new();
@@ -1576,7 +1738,13 @@ pub async fn restore_session(app_handle: AppHandle) -> AppResult<Option<Restored
 
         let already_live = crate::modules::remote_terminal_http::is_attached(&wt.terminal_id);
 
-        let reconnect = if already_live {
+        let exited = wt.remote_status.as_deref() == Some("exited");
+        let reconnect = if exited {
+            crate::modules::remote_terminal_http::detach_terminal(&wt.terminal_id);
+            Ok(())
+        } else if already_live && !repaint {
+            Ok(())
+        } else if already_live {
             // The app kept running (tray) while the window was closed, so the
             // stream survived - but the webview didn't, and every xterm.js
             // instance has been recreated EMPTY. The remote side doesn't know
@@ -1596,30 +1764,30 @@ pub async fn restore_session(app_handle: AppHandle) -> AppResult<Option<Restored
             // xterm.js viewport hasn't mounted) - fall back to a placeholder
             // size. The frontend's `remote_terminal_resize` call shortly after
             // mount corrects it.
-            open_terminal_inner(
-                app_handle.clone(),
-                wt.tab_id.clone(),
-                wt.tool.clone(),
-                wt.terminal_id.clone(),
-                80,
-                24,
-            )
-            .await
-            .map(|_| ())
+            crate::modules::remote_terminal_http::attach_terminal(
+                app_handle.clone(), info.priv_key_path.clone(), info.ssh_user.clone(),
+                wt.tab_id.clone(), wt.terminal_id.clone(), 80, 24,
+            ).await
         };
 
-        if let Err(e) = reconnect {
+        if let Err(ref e) = reconnect {
             crate::modules::logger::log_warn(&format!(
                 "remote_terminal: failed to reconnect terminal {}: {}",
                 wt.terminal_id, e
             ));
-            continue;
         }
 
+        if let Ok(mut lock) = folders().lock() {
+            if let Some(tab) = lock.get_mut(&wt.tab_id) {
+                if !tab.terminals.contains(&wt.terminal_id) { tab.terminals.push(wt.terminal_id.clone()); }
+            }
+        }
         restored_terminals.push(RestoredTerminal {
             terminal_id: wt.terminal_id.clone(),
             tab_id: wt.tab_id.clone(),
             tool: wt.tool.clone(),
+            title: wt.title.clone(),
+            status: if exited { "closed" } else if reconnect.is_ok() { "connected" } else { "error" }.into(),
         });
     }
 
@@ -1648,5 +1816,121 @@ pub async fn restore_session(app_handle: AppHandle) -> AppResult<Option<Restored
         },
         folders: restored_folders,
         terminals: restored_terminals,
+        inventory_synced,
+        inventory_error,
     }))
+}
+
+/// Apply only a complete validated account snapshot. Device-local paths and
+/// workspace receipts stay on this device; remote workspaces use no fake path.
+fn reconcile_inventory(inventory: Vec<crate::modules::remote_terminal_http::AccountTerminal>) -> AppResult<()> {
+    let _guard = PERSISTED_STATE_LOCK.lock().map_err(|_| AppError::RemoteTerminal("session_state_lock_poisoned".into()))?;
+    let mut state = load_persisted_state();
+    let old_ids: Vec<_> = state.terminals.iter().map(|t| t.terminal_id.clone()).collect();
+    merge_inventory(&mut state, inventory);
+    write_persisted_state(&state)?;
+    for id in old_ids {
+        if !state.terminals.iter().any(|t| t.terminal_id == id) {
+            // Another device ended this session. Detach this viewer, never kill.
+            crate::modules::remote_terminal_http::detach_terminal(&id);
+        }
+    }
+    let mut lock = folders().lock().map_err(|_| AppError::RemoteTerminal("folders_state_lock_poisoned".into()))?;
+    lock.retain(|id, _| state.folders.iter().any(|f| &f.tab_id == id));
+    for folder in state.folders {
+        let terminals = state.terminals.iter().filter(|t| t.tab_id == folder.tab_id).map(|t| t.terminal_id.clone()).collect();
+        lock.insert(folder.tab_id, FolderTab { local_dir: folder.local_dir, slug: folder.slug, terminals });
+    }
+    Ok(())
+}
+
+pub async fn rename_terminal(terminal_id: String, label: String) -> AppResult<()> {
+    let _guard = terminal_operations().lock().await;
+    let label = label.trim();
+    if label.is_empty() || label.encode_utf16().count() > 120 || label.chars().any(|c| c.is_control()) {
+        return Err(AppError::RemoteTerminal("invalid_terminal_label".into()));
+    }
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::rename_terminal(&info.priv_key_path, &info.ssh_user, &terminal_id, label).await?;
+    let _guard = PERSISTED_STATE_LOCK.lock().map_err(|_| AppError::RemoteTerminal("session_state_lock_poisoned".into()))?;
+    let mut state = load_persisted_state();
+    if let Some(terminal) = state.terminals.iter_mut().find(|t| t.terminal_id == terminal_id) {
+        terminal.title = Some(label.into());
+    }
+    write_persisted_state(&state)
+}
+
+fn merge_inventory(state: &mut PersistedState, inventory: Vec<crate::modules::remote_terminal_http::AccountTerminal>) {
+    state.terminals = inventory.into_iter().map(|t| {
+        let tab_id = if let Some(folder) = state.folders.iter().find(|f| f.slug == t.slug) {
+            folder.tab_id.clone()
+        } else {
+            let tab_id = uuid::Uuid::new_v4().to_string();
+            state.folders.push(PersistedFolder {
+                tab_id: tab_id.clone(), local_dir: String::new(), slug: t.slug,
+                session_version: 0, sync_revision: 0, baseline_fingerprint: None,
+            });
+            tab_id
+        };
+        PersistedTerminal { terminal_id: t.terminal_id, tab_id, tool: t.tool, title: t.title, remote_status: Some(t.status) }
+    }).collect();
+    state.folders.retain(|f| !f.local_dir.is_empty() || state.terminals.iter().any(|t| t.tab_id == f.tab_id));
+}
+
+#[cfg(test)]
+mod account_inventory_tests {
+    use super::*;
+    use crate::modules::remote_terminal_http::AccountTerminal;
+
+    fn terminal(id: &str, slug: &str, status: &str) -> AccountTerminal {
+        AccountTerminal { terminal_id: id.into(), slug: slug.into(), tool: "codex".into(), title: Some("My work".into()), status: status.into() }
+    }
+
+    #[test]
+    fn new_device_groups_sessions_without_copying_local_paths() {
+        let mut state = PersistedState::default();
+        merge_inventory(&mut state, vec![terminal("a", "project", "running"), terminal("b", "project", "exited")]);
+        assert_eq!(state.folders.len(), 1);
+        assert!(state.folders[0].local_dir.is_empty());
+        assert!(state.folders[0].baseline_fingerprint.is_none());
+        assert_eq!(state.terminals[0].tab_id, state.terminals[1].tab_id);
+        assert_eq!(state.terminals[1].remote_status.as_deref(), Some("exited"));
+        assert_eq!(state.terminals[0].title.as_deref(), Some("My work"));
+    }
+
+    #[test]
+    fn reconciliation_retains_device_receipts_and_removes_closed_sessions() {
+        let mut state = PersistedState::default();
+        state.folders.push(PersistedFolder { tab_id: "local".into(), local_dir: "/device/project".into(), slug: "project".into(), session_version: 7, sync_revision: 3, baseline_fingerprint: Some("baseline".into()) });
+        merge_inventory(&mut state, vec![terminal("a", "project", "running"), terminal("b", "other", "running")]);
+        assert_eq!(state.terminals[0].tab_id, "local");
+        assert_eq!(state.folders[0].session_version, 7);
+        assert_eq!(state.folders[0].baseline_fingerprint.as_deref(), Some("baseline"));
+        merge_inventory(&mut state, vec![]);
+        assert!(state.terminals.is_empty());
+        assert_eq!(state.folders.len(), 1);
+        assert_eq!(state.folders[0].local_dir, "/device/project");
+    }
+}
+
+/// A remote workspace can be mapped to a different empty local directory on
+/// each device. Binding alone performs no transfer; download stays explicit.
+pub async fn bind_local_folder(tab_id: String, local_dir: String) -> AppResult<()> {
+    let _terminal_guard = terminal_operations().lock().await;
+    let _workspace_guard = WORKSPACE_OPERATIONS.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
+    let local_dir = local_dir.trim().to_string();
+    validate_empty_project_folder(std::path::Path::new(&local_dir))?;
+    let _persisted_guard = PERSISTED_STATE_LOCK.lock().map_err(|_| AppError::RemoteTerminal("session_state_lock_poisoned".into()))?;
+    let mut state = load_persisted_state();
+    let folder = state.folders.iter_mut().find(|f| f.tab_id == tab_id)
+        .ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?;
+    if !folder.local_dir.is_empty() {
+        return Err(AppError::RemoteTerminal("workspace_local_folder_already_bound".into()));
+    }
+    folder.local_dir = local_dir.clone();
+    write_persisted_state(&state)?;
+    if let Ok(mut lock) = folders().lock() {
+        if let Some(folder) = lock.get_mut(&tab_id) { folder.local_dir = local_dir; }
+    }
+    Ok(())
 }
