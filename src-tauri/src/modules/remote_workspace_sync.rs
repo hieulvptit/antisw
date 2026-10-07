@@ -25,6 +25,22 @@ pub struct WorkspaceStatus {
     pub remote_git: GitState,
 }
 
+impl WorkspaceStatus {
+    pub fn distinguish_unchanged_workspace(&mut self, local_fingerprint: &str) {
+        let empty_fingerprint = format!("{:x}", Sha256::digest(b""));
+        // Matching file contents do not imply that the server has accepted
+        // this client's session/receipt. Keep sync required, but do not claim
+        // local files changed. Other server decisions must remain authoritative.
+        if self.status == "upload_required" && local_fingerprint == self.fingerprint {
+            self.status = if local_fingerprint == empty_fingerprint {
+                "initialization_required"
+            } else {
+                "confirmation_required"
+            }.into();
+        }
+    }
+}
+
 pub fn fingerprint(dir: &Path) -> AppResult<String> {
     fn walk(root: &Path, dir: &Path, lines: &mut Vec<String>) -> AppResult<()> {
         for entry in std::fs::read_dir(dir)? {
@@ -87,6 +103,49 @@ pub fn git_state(dir: &Path) -> AppResult<GitState> {
 mod tests {
     use super::*;
     #[test]
+    fn empty_workspace_only_relabels_upload_when_both_sides_are_empty() {
+        let empty = format!("{:x}", Sha256::digest(b""));
+        let mut status = WorkspaceStatus {
+            status: "upload_required".into(), client_id: None,
+            session_version: 0, sync_revision: 0, fingerprint: empty.clone(),
+            remote_git: GitState { repository: false, dirty: false, pushed: false, head: None },
+        };
+        status.distinguish_unchanged_workspace("nonempty");
+        assert_eq!(status.status, "upload_required");
+        status.fingerprint = "nonempty".into();
+        status.distinguish_unchanged_workspace(&empty);
+        assert_eq!(status.status, "upload_required");
+        status.fingerprint = empty.clone();
+        status.status = "download_required".into();
+        status.distinguish_unchanged_workspace(&empty);
+        assert_eq!(status.status, "download_required");
+        status.status = "upload_required".into();
+        status.distinguish_unchanged_workspace(&empty);
+        assert_eq!(status.status, "initialization_required");
+    }
+    #[test]
+    fn matching_contents_still_require_session_confirmation() {
+        let hash = format!("{:x}", Sha256::digest(b"workspace files"));
+        let mut status = WorkspaceStatus {
+            status: "upload_required".into(), client_id: Some("client".into()),
+            session_version: 2, sync_revision: 3, fingerprint: hash.clone(),
+            remote_git: GitState { repository: true, dirty: true, pushed: false, head: Some("head".into()) },
+        };
+        status.distinguish_unchanged_workspace(&hash);
+        assert_eq!(status.status, "confirmation_required");
+        assert_eq!(status.session_version, 2);
+        assert_eq!(status.sync_revision, 3);
+        assert!(status.remote_git.dirty);
+        for server_status in ["synced", "download_required", "commit_required", "conflict", "error"] {
+            status.status = server_status.into();
+            status.distinguish_unchanged_workspace(&hash);
+            assert_eq!(status.status, server_status);
+        }
+        status.status = "upload_required".into();
+        status.distinguish_unchanged_workspace("different contents");
+        assert_eq!(status.status, "upload_required");
+    }
+    #[test]
     fn fingerprint_matches_server_fixture_and_detects_content() {
         let dir = std::env::temp_dir().join(format!("workspace-hash-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(dir.join(".git")).unwrap();
@@ -96,7 +155,17 @@ mod tests {
         let line = format!("F aGVsbG8udHh0 {:x}\n", Sha256::digest(b"hello"));
         assert_eq!(fingerprint(&dir).unwrap(), format!("{:x}", Sha256::digest(line.as_bytes())));
         let before = fingerprint(&dir).unwrap();
+        // Rewriting identical contents and changing excluded Git metadata
+        // must not make an unchanged workspace appear to have local changes.
+        std::fs::write(dir.join("hello.txt"), "hello").unwrap();
+        std::fs::write(dir.join(".git/ignored"), "updated git metadata").unwrap();
+        assert_eq!(before, fingerprint(&dir).unwrap());
         std::fs::write(dir.join("hello.txt"), "other").unwrap();
+        assert_ne!(before, fingerprint(&dir).unwrap());
+        std::fs::write(dir.join("hello.txt"), "hello").unwrap();
+        std::fs::rename(dir.join("hello.txt"), dir.join("renamed.txt")).unwrap();
+        assert_ne!(before, fingerprint(&dir).unwrap());
+        std::fs::remove_file(dir.join("renamed.txt")).unwrap();
         assert_ne!(before, fingerprint(&dir).unwrap());
         std::fs::remove_dir_all(dir).unwrap();
     }

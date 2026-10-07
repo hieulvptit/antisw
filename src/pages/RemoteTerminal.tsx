@@ -532,26 +532,15 @@ function RemoteTerminal() {
                 invoke('remote_terminal_resize', { terminalId, cols, rows, forceRepaint: false }).catch(() => { });
             };
 
-            // A terminal only repaints in response to a real SIGWINCH, and
-            // nothing raises one when the reported size is unchanged. Since
-            // switching back to an already-open tab normally reports the same
-            // cols/rows, `sendResize` above correctly does nothing (that
-            // dedupe is what the ResizeObserver needs) - which also means
-            // nothing ever prompts the REMOTE tmux/codex session to repaint,
-            // and the pane sits blank until the user happens to type. Call
-            // this instead whenever a terminal becomes the active one.
+            // Switching tabs can need a fresh screen even when geometry has
+            // not changed. Ask the server to redraw this viewer's tmux client
+            // without resizing the shared pane used by the web share viewer.
             const forceRemoteRedraw = () => {
                 const { cols, rows } = term;
                 if (cols <= 0 || rows <= 0) return;
                 lastSentCols = cols;
                 lastSentRows = rows;
-                // A constant flag, NOT an alternating value. This used to
-                // toggle a "pixel width" 1/0/1/0 because the old SSH/PTY
-                // transport put it straight into the kernel's winsize, where
-                // only a CHANGE raises SIGWINCH. Over HTTP the backend reads
-                // it as "force a repaint", so every other call - the ones
-                // sending 0 - asked for nothing and the terminal came back
-                // blank half the time.
+                // A redraw is scoped by this viewer's session token server-side.
                 invoke('remote_terminal_resize', { terminalId, cols, rows, forceRepaint: true }).catch(() => { });
             };
 
@@ -715,10 +704,8 @@ function RemoteTerminal() {
     // matters here: switching back to an already-open tab typically reports
     // the exact same cols/rows it already had, so a plain `sendResize()`
     // would correctly no-op (that dedupe is what the ResizeObserver above
-    // needs) - but that also means nothing ever prompts the REMOTE tmux/
-    // codex session to repaint, since it only does so in response to a real
-    // SIGWINCH and has no idea a local CSS visibility toggle just happened.
-    // Without a forced resize round-trip, the pane was left showing nothing
+    // needs). A viewer-specific redraw supplies the fresh screen without
+    // sending SIGWINCH to the shared pane. Otherwise the view could show nothing
     // but a bare cursor after switching, until some unrelated action (like
     // typing) happened to make codex redraw on its own.
     //
@@ -1272,7 +1259,7 @@ function RemoteTerminal() {
                             <div className="shrink-0 flex items-center gap-3 min-h-16 rounded-xl border border-gray-200 dark:border-base-200 px-4 py-2" role="status" aria-live="polite">
                                 <span className={`text-xs flex-1 ${['download_required', 'commit_required', 'conflict', 'error'].includes(activeTab.workspaceStatus) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'}`} title={activeTab.workspaceError || undefined}>
                                     {activeTab.workspaceError || (
-                                        !activeTab.filesSynced ? t('remote_terminal.sync.new_project')
+                                        !activeTab.filesSynced && ['unknown', 'initialization_required', 'upload_required'].includes(activeTab.workspaceStatus) ? t('remote_terminal.sync.new_project')
                                             : t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)
                                     )}
                                 </span>
@@ -1298,7 +1285,7 @@ function RemoteTerminal() {
                                 </div>
                                 <button
                                     onClick={() => handleSyncFolder(activeTab.tabId)}
-                                    disabled={authRequired || activeTab.syncStatus === 'syncing' || !['synced', 'upload_required'].includes(activeTab.workspaceStatus)}
+                                    disabled={authRequired || activeTab.syncStatus === 'syncing' || !['synced', 'initialization_required', 'confirmation_required', 'upload_required'].includes(activeTab.workspaceStatus)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                                 >
                                     <RefreshCw className={`w-3.5 h-3.5 ${activeTab.syncStatus === 'syncing' ? 'animate-spin' : ''}`} />

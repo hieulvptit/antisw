@@ -1406,6 +1406,8 @@
             "checking": "Checking workspace and session…",
             "synced": "Workspace and session are up to date.",
             "upload_required": "Local changes need to be synced to the server.",
+            "initialization_required": "The workspace is empty. Click Sync Now to confirm it with the server.",
+            "confirmation_required": "Local and server files match. Click Sync Now to confirm the workspace session.",
             "download_required": "The server or session has changed. Sync from the server before uploading.",
             "commit_required": "This workspace belongs to another client. Commit and push changes on both clients before syncing.",
             "conflict": "Local and remote changes conflict. Commit and push local changes, then reconcile with the server before syncing.",

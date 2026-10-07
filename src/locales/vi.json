@@ -1212,6 +1212,8 @@
             "unknown": "Cần kiểm tra workspace trước khi đồng bộ.",
             "checking": "Đang kiểm tra workspace và phiên…",
             "synced": "Workspace và phiên đã đồng bộ.",
+            "initialization_required": "Workspace đang trống. Bấm Đồng bộ ngay để xác nhận với server.",
+            "confirmation_required": "File local và server giống nhau. Bấm Đồng bộ ngay để xác nhận phiên workspace.",
             "upload_required": "Có thay đổi local cần đồng bộ lên server.",
             "download_required": "Server hoặc phiên đã thay đổi. Cần đồng bộ về máy trước khi tải lên.",
             "commit_required": "Workspace thuộc client khác. Hãy commit và push thay đổi ở cả hai client trước khi đồng bộ.",

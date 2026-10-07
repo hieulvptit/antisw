@@ -929,7 +929,10 @@ pub async fn check_workspace(tab_id: String) -> AppResult<crate::modules::remote
     let body = workspace_body(&tab_id).await?;
     let info = get_connection_info()?;
     let response = crate::modules::remote_terminal_http::workspace_request(&info.priv_key_path, &info.ssh_user, "check", &body).await?;
-    serde_json::from_value(response).map_err(|e| AppError::RemoteTerminal(format!("workspace_response_invalid: {}", e)))
+    let mut status: crate::modules::remote_workspace_sync::WorkspaceStatus = serde_json::from_value(response)
+        .map_err(|e| AppError::RemoteTerminal(format!("workspace_response_invalid: {}", e)))?;
+    status.distinguish_unchanged_workspace(body["fingerprint"].as_str().unwrap_or_default());
+    Ok(status)
 }
 
 pub async fn sync_folder(app_handle: AppHandle, tab_id: String) -> AppResult<()> {
@@ -1321,25 +1324,9 @@ pub async fn write_input(terminal_id: &str, data: String) -> AppResult<()> {
 
 /// Resize a specific terminal's remote pty.
 ///
-/// `force_repaint` asks for a redraw even when the size is unchanged. It is
-/// needed because a terminal only repaints in response to a real SIGWINCH, and
-/// nothing raises one when the reported size does not change - so switching
-/// back to a tab left the remote screen un-redrawn and the pane looked blank
-/// until the user happened to type something.
-///
-/// It is a plain bool rather than the pixel dimensions this used to carry. The
-/// old SSH/PTY transport forwarded those literally into the kernel's `winsize`,
-/// where toggling only the pixel fields raised a SIGWINCH without changing
-/// cols/rows - so the caller alternated their value to force one. The remote
-/// pty is driven by node-pty now, whose `resize()` takes cols/rows ONLY, so
-/// there is nowhere for pixels to go; this became "non-zero means force it",
-/// and the caller kept alternating 1/0 against it. Every OTHER request
-/// therefore asked for nothing and the terminal stayed blank half the time.
-/// Naming the flag for what it does is what stops that drifting again.
-///
-/// Forcing it sends one row less, then the real size: two genuine size changes,
-/// hence two guaranteed SIGWINCHes. That does briefly reflow, which is why it
-/// is not used for ordinary resizes.
+/// `force_repaint` asks the server to redraw this viewer's tmux client.
+/// Never fake a resize: changing the shared pane's dimensions also disturbs
+/// the web share viewer, even though it has its own PTY and session token.
 pub async fn resize(
     terminal_id: &str,
     cols: u16,
@@ -1354,10 +1341,7 @@ pub async fn resize(
         "remote_terminal: resize {} -> {}x{} (force_repaint={})",
         terminal_id, cols, rows, force_repaint
     ));
-    if force_repaint && rows > 1 {
-        crate::modules::remote_terminal_http::resize(terminal_id, cols, rows - 1).await?;
-    }
-    crate::modules::remote_terminal_http::resize(terminal_id, cols, rows).await
+    crate::modules::remote_terminal_http::resize(terminal_id, cols, rows, force_repaint).await
 }
 
 /// Stop streaming a terminal, ask the server to end its tmux session, and

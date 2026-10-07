@@ -1114,7 +1114,7 @@ fn forget_input_queue(terminal_id: &str) {
     }
 }
 
-pub async fn resize(terminal_id: &str, cols: u16, rows: u16) -> AppResult<()> {
+pub async fn resize(terminal_id: &str, cols: u16, rows: u16, force_repaint: bool) -> AppResult<()> {
     let token = session_token_for(terminal_id)?;
     if let Ok(mut lock) = http_sessions().lock() {
         if let Some(session) = lock.get_mut(terminal_id) {
@@ -1126,7 +1126,7 @@ pub async fn resize(terminal_id: &str, cols: u16, rows: u16) -> AppResult<()> {
         .post(format!("{}/term/resize", base_url()))
         .timeout(CONTROL_TIMEOUT)
         .bearer_auth(token)
-        .json(&serde_json::json!({ "cols": cols, "rows": rows }))
+        .json(&serde_json::json!({ "cols": cols, "rows": rows, "force_repaint": force_repaint }))
         .send()
         .await
         .map_err(|e| AppError::RemoteTerminal(format!("term_resize_failed: {}", e)))?

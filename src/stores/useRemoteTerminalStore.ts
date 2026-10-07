@@ -4,7 +4,7 @@ import { create } from 'zustand';
 export type LoginStatus = 'idle' | 'waiting_sso' | 'logged_in' | 'error';
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
-export type WorkspaceStatus = 'unknown' | 'checking' | 'synced' | 'upload_required' | 'download_required' | 'commit_required' | 'conflict' | 'error';
+export type WorkspaceStatus = 'unknown' | 'checking' | 'synced' | 'initialization_required' | 'confirmation_required' | 'upload_required' | 'download_required' | 'commit_required' | 'conflict' | 'error';
 export type TerminalStatus = 'connecting' | 'connected' | 'closed' | 'error';
 
 /** Which remote CLI a terminal runs. Validated again server-side, but the
