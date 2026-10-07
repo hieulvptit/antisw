@@ -191,7 +191,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           DOWNLOAD_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
-          VER="${VERSION#v}"
+          VER=$(jq -er '.version' src-tauri/tauri.conf.json)
 
           # Helper: read signature content from .sig file in artifacts
           read_sig() {
