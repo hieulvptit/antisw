@@ -27,6 +27,7 @@ pub fn binary(name: &str) -> PathBuf {
 
 /// MSYS2 rsync treats C: as a remote-host separator. Feed its POSIX paths
 /// to rsync and the matching OpenSSH tools, including paths containing spaces.
+/// Use /proc/cygdrive so a relocated runtime needs no build-host fstab.
 pub fn posix_path(path: &Path) -> String {
     let value = path.to_string_lossy().into_owned();
     if cfg!(windows) {
@@ -50,7 +51,7 @@ fn windows_posix_path(value: &str) -> String {
     let bytes = value.as_bytes();
     if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/' {
         return format!(
-            "/{}{}",
+            "/proc/cygdrive/{}{}",
             (bytes[0] as char).to_ascii_lowercase(),
             &value[2..]
         );
@@ -109,9 +110,13 @@ mod tests {
     fn converts_drive_and_unc_paths_without_losing_spaces() {
         assert_eq!(
             windows_posix_path(r"C:\Users\Jane Doe\project"),
-            "/c/Users/Jane Doe/project"
+            "/proc/cygdrive/c/Users/Jane Doe/project"
         );
-        assert_eq!(windows_posix_path(r"\\?\D:\project"), "/d/project");
+        assert_eq!(windows_posix_path(r"\\?\D:\project"), "/proc/cygdrive/d/project");
+        assert_eq!(
+            windows_posix_path(r"C:\runtime's spaces\signing key"),
+            "/proc/cygdrive/c/runtime's spaces/signing key"
+        );
         assert_eq!(
             windows_posix_path(r"\\server\share\project"),
             "//server/share/project"

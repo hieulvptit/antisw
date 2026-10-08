@@ -84,9 +84,12 @@ for package in "${packages[@]}"; do
   mkdir -p "$output/licenses/$safe_package"
   if [[ $platform == windows ]]; then
     pacman -Qi "$package" >> "$output/PACKAGES.txt"
+    # Use # as the address delimiter: | also occurs in the ERE alternation.
+    # Capture first so set -e/pipefail catches failures in notice collection.
+    license_files=$(pacman -Qlq "$package" | sed -nE '\#/share/licenses/#p; \#/share/doc/.*/(COPYING[^/]*|LICENSE[^/]*|CYGWIN_LICENSE)$#p')
     while IFS= read -r file; do
       if [[ -f $file ]]; then cp "$file" "$output/licenses/$safe_package/"; fi
-    done < <(pacman -Qlq "$package" | sed -nE '\|/share/licenses/|p; \|/share/doc/.*/(COPYING[^/]*|LICENSE[^/]*|CYGWIN_LICENSE)$|p')
+    done <<< "$license_files"
     if [[ ${SYNC_TOOLS_COLLECT_SOURCES:-0} == 1 ]]; then
       version=$(pacman -Q "$package" | cut -d' ' -f2)
       desc="/var/lib/pacman/local/$package-$version/desc"

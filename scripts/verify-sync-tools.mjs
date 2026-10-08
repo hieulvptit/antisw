@@ -16,9 +16,14 @@ const env = { ...process.env, PATH: '', LD_LIBRARY_PATH: join(runtime, 'lib'), M
 for (const key of Object.keys(env)) {
   if (key !== 'PATH' && key.toUpperCase() === 'PATH') delete env[key];
 }
-const posix = (path) => process.platform === 'win32'
-  ? path.replaceAll('\\', '/').replace(/^([a-z]):/i, (_, drive) => `/${drive.toLowerCase()}`)
-  : path;
+// The relocated DLL has its own mount table, without the build host's fstab.
+// /proc/cygdrive works regardless of the configured drive mount prefix.
+const posix = (path) => {
+  if (process.platform !== 'win32') return path;
+  const value = path.replaceAll('\\', '/').replace(/^\/\/\?\//, '');
+  if (value.startsWith('UNC/')) return `//${value.slice(4)}`;
+  return value.replace(/^([a-z]):\//i, (_, drive) => `/proc/cygdrive/${drive.toLowerCase()}/`);
+};
 function run(tool, args, input) {
   const result = spawnSync(join(runtime, 'bin', `${tool}${extension}`), args, {
     env, input, encoding: 'utf8', timeout: 30000,
