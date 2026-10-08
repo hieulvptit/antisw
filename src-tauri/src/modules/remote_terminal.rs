@@ -1017,13 +1017,9 @@ async fn ensure_rsync_binary(_app_handle: &AppHandle, _tab_id: &str) -> AppResul
 /// double it up into a broken, nonexistent path (confirmed against the
 /// live server).
 ///
-/// This is a one-way (local -> remote) mirror by design: the user
-/// explicitly asked for simple one-way sync, not bidirectional sync
-/// (Mutagen-style). `--delete` makes the remote `<workspace_root>/<slug>/`
-/// an EXACT mirror of the tab's local directory - files removed locally are
-/// also removed remotely. That is intentional and safe here because the
-/// remote workspace is never a source of truth; it only exists to give the
-/// remote `codex`/`claude` process a working copy of the local directory.
+/// Uploads mirror the selected local files. `.gitignore` and default build/cache
+/// exclusions also protect matching receiver paths from `--delete`, preserving
+/// server-generated dependencies and build output. Downloads remain explicit.
 ///
 /// The remote forced-command dispatch script recognizes rsync's own
 /// `rsync --server ...` remote invocation (sent by the `-e "ssh ..."`
@@ -1056,6 +1052,7 @@ async fn workspace_body(tab_id: &str) -> AppResult<serde_json::Value> {
         "sync_revision": baseline.as_ref().map(|f| f.sync_revision).unwrap_or(0),
         "baseline_fingerprint": baseline.and_then(|f| f.baseline_fingerprint),
         "fingerprint": fingerprint, "git": git,
+        "sync_filter_version": 1,
     }))
 }
 
@@ -1065,6 +1062,9 @@ pub async fn check_workspace(tab_id: String) -> AppResult<crate::modules::remote
     let body = workspace_body(&tab_id).await?;
     let info = get_connection_info()?;
     let response = crate::modules::remote_terminal_http::workspace_request(&info.priv_key_path, &info.ssh_user, "check", &body).await?;
+    if response["sync_filter_version"].as_u64() != Some(1) {
+        return Err(AppError::RemoteTerminal("workspace_protocol_not_supported: update server for gitignore sync filters".into()));
+    }
     let mut status: crate::modules::remote_workspace_sync::WorkspaceStatus = serde_json::from_value(response)
         .map_err(|e| AppError::RemoteTerminal(format!("workspace_response_invalid: {}", e)))?;
     status.distinguish_unchanged_workspace(body["fingerprint"].as_str().unwrap_or_default());
@@ -1098,10 +1098,24 @@ fn persist_workspace_receipt(tab_id: &str, receipt: &serde_json::Value) -> AppRe
 async fn sync_folder_direction(app_handle: AppHandle, tab_id: String, download: bool) -> AppResult<()> {
     let _guard = WORKSPACE_OPERATIONS.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
     let rsync_binary = ensure_rsync_binary(&app_handle, &tab_id).await?;
+    // Select before preparing the short-lived ticket. Keep the exclusion file
+    // alive until rsync exits; excluded receiver files are protected by --delete.
+    let upload_filter = if download { None } else {
+        let local_dir = folders().lock()
+            .map_err(|_| AppError::RemoteTerminal("folders_state_lock_poisoned".into()))?
+            .get(&tab_id).ok_or_else(|| AppError::RemoteTerminal("unknown_folder_tab".into()))?
+            .local_dir.clone();
+        Some(tokio::task::spawn_blocking(move || {
+            crate::modules::remote_workspace_files::UploadFilter::new(std::path::Path::new(&local_dir))
+        }).await.map_err(|e| AppError::RemoteTerminal(e.to_string()))??)
+    };
     let mut body = workspace_body(&tab_id).await?;
     body["direction"] = serde_json::json!(if download { "download" } else { "upload" });
     let connection = get_connection_info()?;
     let prepared = crate::modules::remote_terminal_http::workspace_request(&connection.priv_key_path, &connection.ssh_user, "prepare", &body).await?;
+    if prepared["sync_filter_version"].as_u64() != Some(1) {
+        return Err(AppError::RemoteTerminal("workspace_protocol_not_supported: update server for gitignore sync filters".into()));
+    }
     if !prepared["receipt"].is_null() {
         persist_workspace_receipt(&tab_id, &prepared["receipt"])?;
         return Ok(());
@@ -1172,6 +1186,10 @@ async fn sync_folder_direction(app_handle: AppHandle, tab_id: String, download: 
     // macOS may select Homebrew outside PATH; preserve its resolved binary.
     #[cfg(target_os = "macos")]
     let mut child = tokio::process::Command::new(&rsync_binary);
+    if let Some(filter) = &upload_filter {
+        child.arg("--from0").arg("--exclude-from")
+            .arg(crate::modules::remote_sync_tools::posix_path(&filter.path));
+    }
     let mut child = child
         .arg("-azc")
         .arg("--delete")

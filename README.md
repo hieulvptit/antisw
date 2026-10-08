@@ -119,3 +119,12 @@ Nếu bạn thấy dự án này hữu ích, hãy mua cho tôi một ly cà phê
   <p>Nếu bạn thấy công cụ này hữu ích, hãy cho nó một ⭐️ trên GitHub!</p>
   <p>Copyright © 2025 Antigravity Team.</p>
 </div>
+
+## Cập nhật
+
+- **v6.0.5**
+- Add folder tự upload dự án sau khi kiểm tra trạng thái workspace.
+- Upload tôn trọng .gitignore ở thư mục gốc và thư mục con, bao gồm rule ! giữ lại file.
+- Bỏ qua dependency, build output và cache phổ biến; các file bị bỏ qua không làm lệch trạng thái sync.
+- Yêu cầu cập nhật server bằng patches/jobautopc-workspace-ignore.patch trước khi dùng sync ở phiên bản này.
+

@@ -1,0 +1,23 @@
+# Rebuildable dependencies, build output and caches. Project .gitignore rules
+# have higher priority and may explicitly include one of these paths with !.
+node_modules/
+target/
+dist/
+build/
+.next/
+.nuxt/
+.output/
+.cache/
+.turbo/
+.parcel-cache/
+.vite/
+coverage/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.gradle/
+.DS_Store
+*.pyc
+*.pyo

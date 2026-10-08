@@ -914,7 +914,18 @@ function RemoteTerminal() {
             const result = await invoke<AddFolderResult>('remote_terminal_add_folder', { localDir: selected });
             addFolder({ tabId: result.tab_id, localDir: selected, slug: result.slug });
             const workspace = await checkWorkspace(result.tab_id);
-            if (workspace?.status === 'download_required') setSyncChoiceTabId(result.tab_id);
+            if (!workspace) {
+                const message = useRemoteTerminalStore.getState().folders[result.tab_id]?.workspaceError;
+                if (message) showToast(message, 'error');
+                return;
+            }
+            if (workspace.status === 'download_required') {
+                setSyncChoiceTabId(result.tab_id);
+            } else if (['synced', 'initialization_required', 'confirmation_required', 'upload_required'].includes(workspace.status)) {
+                // Adding a local project should transfer its files immediately.
+                // prepare still validates the server state before any upload.
+                await handleSyncFolder(result.tab_id);
+            }
         } catch (e) {
             showToast(describeRemoteError(e), 'error');
         }

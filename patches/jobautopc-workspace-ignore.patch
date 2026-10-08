@@ -1,0 +1,182 @@
+--- a/ssh_broker/workspace_sync.js
++++ b/ssh_broker/workspace_sync.js
+@@ -11,7 +11,25 @@
+ const EMPTY_HASH = crypto.createHash('sha256').digest('hex');
+ const sha = (data) => crypto.createHash('sha256').update(data).digest('hex');
+ 
+-async function fingerprint(dir) {
++async function fingerprint(dir, filtered = false) {
++  if (filtered) {
++    let selected;
++    try { selected = await require('./workspace_files').select(dir); }
++    catch (err) { if (err.code === 'ENOENT' && !fs.existsSync(dir)) return EMPTY_HASH; throw err; }
++    const records = [];
++    for (const name of selected) {
++      const full = path.join(dir, name), kind = await fs.promises.lstat(full);
++      const encoded = Buffer.from(name).toString('base64');
++      if (kind.isSymbolicLink()) records.push(`L ${encoded} ${sha(await fs.promises.readlink(full))}\n`);
++      else if (kind.isDirectory()) records.push(`D ${encoded}\n`);
++      else if (kind.isFile()) {
++        const hash = crypto.createHash('sha256');
++        for await (const chunk of fs.createReadStream(full)) hash.update(chunk);
++        records.push(`F ${encoded} ${hash.digest('hex')}\n`);
++      } else throw new Error('unsupported_workspace_file');
++    }
++    return sha(records.sort().join(''));
++  }
+   const lines = [];
+   async function walk(relative) {
+     const entries = await fs.promises.readdir(path.join(dir, relative), { withFileTypes: true });
+@@ -97,7 +115,7 @@
+       try { if ((await fs.promises.lstat(candidate)).isSymbolicLink()) throw new Error('workspace_symlink'); }
+       catch (err) { if (err.code !== 'ENOENT') throw err; }
+     }
+-    return { fingerprint: await fingerprint(dir), git: await gitState(dir) };
++    return { fingerprint: await fingerprint(dir, body.sync_filter_version === 1), git: await gitState(dir) };
+   }
+   observe(body, state, remote) {
+     // Keep the last report from the owning client, so its unsynced local
+@@ -146,7 +164,7 @@
+     return this.locked(body, async () => {
+       const state = this.read(body), remote = await this.remote(body);
+       this.observe(body, state, remote);
+-      return { status: decision(body, state, remote), client_id: state.client_id, session_version: state.session_version, sync_revision: state.sync_revision, fingerprint: remote.fingerprint, remote_git: remote.git };
++      return { sync_filter_version: 1, status: decision(body, state, remote), client_id: state.client_id, session_version: state.session_version, sync_revision: state.sync_revision, fingerprint: remote.fingerprint, remote_git: remote.git };
+     });
+   }
+   async prepare(body) {
+@@ -167,12 +185,12 @@
+         state.fingerprint = remote.fingerprint; state.head = remote.git.head;
+         state.owner_git = remote.git; state.owner_fingerprint = remote.fingerprint;
+         this.write(body, state);
+-        return { receipt: state };
++        return { sync_filter_version: 1, receipt: state };
+       }
+       const ticket = crypto.randomBytes(32).toString('hex');
+       const grant = { ...body, expected: state, remote, expires: Date.now() + 60000 };
+       fs.writeFileSync(path.join(this.meta, `ticket-${ticket}.json`), JSON.stringify(grant), { mode: 0o600 });
+-      return { ticket };
++      return { sync_filter_version: 1, ticket };
+     });
+   }
+   result(body) {
+--- /dev/null
++++ b/ssh_broker/workspace_files.js
+@@ -0,0 +1,60 @@
++'use strict';
++const fs = require('fs');
++const os = require('os');
++const path = require('path');
++const { spawn } = require('child_process');
++// Keep identical to antisw/src-tauri/resources/workspace-sync.gitignore.
++const DEFAULT_IGNORES = 'node_modules/\ntarget/\ndist/\nbuild/\n.next/\n.nuxt/\n.output/\n.cache/\n.turbo/\n.parcel-cache/\n.vite/\ncoverage/\n.venv/\nvenv/\n__pycache__/\n.pytest_cache/\n.mypy_cache/\n.gradle/\n.DS_Store\n*.pyc\n*.pyo\n';
++
++async function select(root) {
++  root = await fs.promises.realpath(root);
++  const temp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-filter-'));
++  try {
++    await fs.promises.mkdir(path.join(temp, 'objects'));
++    await fs.promises.mkdir(path.join(temp, 'refs'));
++    await fs.promises.writeFile(path.join(temp, 'HEAD'), 'ref: refs/heads/sync\n');
++    await fs.promises.writeFile(path.join(temp, 'defaults'), DEFAULT_IGNORES);
++    async function ignored(names) {
++      if (!names.length) return new Set();
++      return new Promise((resolve, reject) => {
++        const child = spawn('git', ['--git-dir', temp, '--work-tree', root, '-c', `core.excludesFile=${path.join(temp, 'defaults')}`, '-c', 'core.ignoreCase=false', 'check-ignore', '--no-index', '-v', '-z', '--stdin'], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
++        const output = [], errors = [];
++        child.stdout.on('data', (data) => output.push(data));
++        child.stderr.on('data', (data) => errors.push(data));
++        child.on('error', reject);
++        child.stdin.on('error', reject);
++        child.on('close', (code) => {
++          if (code !== 0 && code !== 1) return reject(new Error(`workspace_ignore_failed: ${Buffer.concat(errors)}`));
++          const fields = Buffer.concat(output).toString('utf8').split('\0');
++          const ignored = new Set();
++          for (let i = 0; i + 3 < fields.length; i += 4) {
++            if (!fields[i + 2].startsWith('!')) ignored.add(fields[i + 3]);
++          }
++          resolve(ignored);
++        });
++        child.stdin.end(`${names.join('\0')}\0`);
++      });
++    }
++    const selected = [];
++    let pending = [''];
++    while (pending.length) {
++      const entries = [];
++      for (const relative of pending) {
++        for (const entry of await fs.promises.readdir(path.join(root, relative), { withFileTypes: true })) {
++          if (entry.name === '.git') continue;
++          const name = relative ? `${relative}/${entry.name}` : entry.name;
++          entries.push({ name, entry, query: name });
++        }
++      }
++      pending = [];
++      const excluded = await ignored(entries.map(({ query }) => query));
++      for (const { name, entry, query } of entries) {
++        if (excluded.has(query) && entry.name !== '.gitignore') continue;
++        selected.push(name);
++        if (entry.isDirectory()) pending.push(name);
++      }
++    }
++    return selected;
++  } finally { await fs.promises.rm(temp, { recursive: true, force: true }); }
++}
++module.exports = { select, DEFAULT_IGNORES };
+--- /dev/null
++++ b/test/workspace_files.test.js
+@@ -0,0 +1,54 @@
++'use strict';
++const { test } = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('fs');
++const os = require('os');
++const path = require('path');
++const crypto = require('crypto');
++const { select, DEFAULT_IGNORES } = require('../ssh_broker/workspace_files');
++const { fingerprint, WorkspaceSync } = require('../ssh_broker/workspace_sync');
++const sha = (value) => crypto.createHash('sha256').update(value).digest('hex');
++function fixture(t) {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspace-ignore-test-'));
++  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
++  const write = (name, data = 'data') => {
++    const full = path.join(root, name); fs.mkdirSync(path.dirname(full), { recursive: true }); fs.writeFileSync(full, data);
++  };
++  return { root, write };
++}
++test('nested gitignore, anchored paths, negations and defaults work without .git', async (t) => {
++  const { root, write } = fixture(t);
++  write('.gitignore', '*.log\n!keep.log\n/root-only.txt\n!build/\nbuild/*\n!build/keep.txt\n');
++  write('src/.gitignore', '*.tmp\n!keep.tmp\n');
++  for (const name of ['node_modules/pkg/file', 'target/debug/file', 'dist/bundle', 'drop.log', 'root-only.txt', 'src/drop.tmp', 'build/drop.txt']) write(name);
++  for (const name of ['README.md', 'keep.log', 'src/root-only.txt', 'src/keep.tmp', 'build/keep.txt']) write(name);
++  const selected = new Set(await select(root));
++  for (const name of ['README.md', 'keep.log', 'src/root-only.txt', 'src/keep.tmp', 'build/keep.txt', '.gitignore', 'src/.gitignore']) assert.ok(selected.has(name), name);
++  for (const name of ['node_modules', 'target', 'dist', 'drop.log', 'root-only.txt', 'src/drop.tmp', 'build/drop.txt']) assert.ok(!selected.has(name), name);
++  const before = await fingerprint(root, true);
++  write('target/debug/file', 'rebuilt');
++  assert.equal(await fingerprint(root, true), before);
++  write('README.md', 'edited');
++  assert.notEqual(await fingerprint(root, true), before);
++});
++test('filtered fingerprint matches client format and keeps legacy clients supported', async (t) => {
++  const { root, write } = fixture(t);
++  write('hello.txt', 'hello'); write('build/large');
++  assert.equal(await fingerprint(root, true), sha(`F aGVsbG8udHh0 ${sha('hello')}\n`));
++  assert.notEqual(await fingerprint(root), await fingerprint(root, true));
++});
++test('workspace check/prepare negotiate filter version and return a receipt after upload', async (t) => {
++  const { root, write } = fixture(t);
++  write('cdx-test/repo/target/large');
++  const manager = new WorkspaceSync(root);
++  let body = { folder: 'cdx-test', slug: 'repo', client_id: 'a', session_id: 's', session_version: 0, sync_revision: 0, baseline_fingerprint: null, fingerprint: sha(''), git: { repository: false, dirty: false, pushed: false, head: null }, sync_filter_version: 1 };
++  assert.equal((await manager.check(body)).status, 'upload_required');
++  const prepared = await manager.prepare({ ...body, direction: 'upload' });
++  assert.equal(prepared.sync_filter_version, 1);
++  await manager.transfer(prepared.ticket, `workspace-sync ${prepared.ticket} --server -a . cdx-test/repo/`, async () => 0);
++  const receipt = manager.result({ ...body, ticket: prepared.ticket });
++  body = { ...body, session_version: receipt.session_version, sync_revision: receipt.sync_revision, baseline_fingerprint: receipt.fingerprint };
++  const checked = await manager.check(body);
++  assert.equal(checked.sync_filter_version, 1);
++  assert.equal(checked.status, 'synced');
++});

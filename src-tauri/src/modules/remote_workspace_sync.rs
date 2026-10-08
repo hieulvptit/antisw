@@ -1,5 +1,5 @@
 //! Workspace fingerprints shared with term-server's workspace_sync.js.
-//! Hash file contents (not mtimes) and never follow symlinks. Git internals
+//! Hash selected file contents (not mtimes) and never follow symlinks. Git internals
 //! are transferred by rsync but HEAD and dirty/push state are checked separately.
 use crate::error::{AppError, AppResult};
 use base64::Engine;
@@ -42,39 +42,31 @@ impl WorkspaceStatus {
 }
 
 pub fn fingerprint(dir: &Path) -> AppResult<String> {
-    fn walk(root: &Path, dir: &Path, lines: &mut Vec<String>) -> AppResult<()> {
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            if entry.file_name() == ".git" { continue; }
-            let path = entry.path();
-            let relative = path.strip_prefix(root).map_err(|e| AppError::RemoteTerminal(e.to_string()))?;
-            let name = relative.to_str().ok_or_else(|| AppError::RemoteTerminal("non_utf8_workspace_path".into()))?.replace('\\', "/");
-            let encoded = base64::engine::general_purpose::STANDARD.encode(name.as_bytes());
-            let kind = entry.file_type()?;
-            if kind.is_symlink() {
-                let target = std::fs::read_link(&path)?;
-                let target = target.to_str().ok_or_else(|| AppError::RemoteTerminal("non_utf8_symlink".into()))?;
-                lines.push(format!("L {} {:x}\n", encoded, Sha256::digest(target.as_bytes())));
-            } else if kind.is_dir() {
-                lines.push(format!("D {}\n", encoded));
-                walk(root, &path, lines)?;
-            } else if kind.is_file() {
-                use std::io::Read;
-                let mut file = std::fs::File::open(path)?;
-                let mut hash = Sha256::new();
-                let mut chunk = [0u8; 65536];
-                loop {
-                    let n = file.read(&mut chunk)?;
-                    if n == 0 { break; }
-                    hash.update(&chunk[..n]);
-                }
-                lines.push(format!("F {} {:x}\n", encoded, hash.finalize()));
-            } else { return Err(AppError::RemoteTerminal("unsupported_workspace_file".into())); }
-        }
-        Ok(())
-    }
     let mut lines = Vec::new();
-    walk(dir, dir, &mut lines)?;
+    for relative in crate::modules::remote_workspace_files::select(dir)?.paths {
+        let path = dir.join(&relative);
+        let name = crate::modules::remote_workspace_files::relative_name(&relative)?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(name.as_bytes());
+        let kind = std::fs::symlink_metadata(&path)?.file_type();
+        if kind.is_symlink() {
+            let target = std::fs::read_link(&path)?;
+            let target = target.to_str().ok_or_else(|| AppError::RemoteTerminal("non_utf8_symlink".into()))?;
+            lines.push(format!("L {} {:x}\n", encoded, Sha256::digest(target.as_bytes())));
+        } else if kind.is_dir() {
+            lines.push(format!("D {}\n", encoded));
+        } else if kind.is_file() {
+            use std::io::Read;
+            let mut file = std::fs::File::open(path)?;
+            let mut hash = Sha256::new();
+            let mut chunk = [0u8; 65536];
+            loop {
+                let n = file.read(&mut chunk)?;
+                if n == 0 { break; }
+                hash.update(&chunk[..n]);
+            }
+            lines.push(format!("F {} {:x}\n", encoded, hash.finalize()));
+        } else { return Err(AppError::RemoteTerminal("unsupported_workspace_file".into())); }
+    }
     lines.sort();
     Ok(format!("{:x}", Sha256::digest(lines.concat().as_bytes())))
 }
