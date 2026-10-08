@@ -4,7 +4,7 @@ import { Input, Modal, QRCode } from 'antd';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
-    LogIn, Loader2, Terminal as TerminalIcon, XCircle,
+    LogIn, Loader2, Terminal as TerminalIcon, XCircle, CheckCircle2, Clock,
     FolderOpen, RefreshCw, Plus, X, Share2, Pencil, GitBranch, GitCommitVertical,
 } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
@@ -16,6 +16,8 @@ import { showToast } from '../components/common/ToastContainer';
 import { isTauri } from '../utils/env';
 import { useRemoteTerminalStore, RemoteTerminalReady, RemoteTool, WorkspaceStatus, TerminalStatus } from '../stores/useRemoteTerminalStore';
 import GitImportModal, { GitImportResult } from '../components/remote/GitImportModal';
+import GitBranchModal from '../components/remote/GitBranchModal';
+import { readGitRepoUrl, saveGitRepoUrl } from '../utils/remoteGitRepoUrls';
 import { installImeInput } from '../utils/xtermImeInput';
 import { debugState, escapeForLog, installDebugSwitches, record } from '../utils/remoteTerminalDebug';
 
@@ -124,8 +126,9 @@ function RemoteTerminal() {
     } = useRemoteTerminalStore();
 
     const [gitImportOpen, setGitImportOpen] = useState(false);
+    const [gitBranchTerminalId, setGitBranchTerminalId] = useState<string | null>(null);
     const [gitPushTerminalId, setGitPushTerminalId] = useState<string | null>(null);
-    const gitRepoUrlsRef = useRef(new Map<string, string>());
+
     const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [isSharing, setIsSharing] = useState(false);
     const [isOpeningTerminal, setIsOpeningTerminal] = useState(false);
@@ -911,7 +914,7 @@ function RemoteTerminal() {
     };
 
     const handleGitImported = async (result: GitImportResult) => {
-        if (result.repo_url) gitRepoUrlsRef.current.set(result.terminal_id, result.repo_url);
+        if (result.repo_url) saveGitRepoUrl(ready, result.slug, result.repo_url);
         showToast(t('remote_terminal.git.success'), 'success');
         try {
             const session = await invoke<RestoredSessionPayload | null>('remote_terminal_refresh_sessions');
@@ -1204,7 +1207,7 @@ function RemoteTerminal() {
     ));
 
     return (
-        <div className="h-full w-full flex flex-col p-5 gap-4">
+        <div className="@container/remote h-full w-full min-w-0 flex flex-col p-3 sm:p-5 gap-4">
             {loginStatus !== 'logged_in' && (
                 <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4 rounded-2xl border border-gray-200 dark:border-base-200 bg-white dark:bg-base-100 px-6 text-center">
                     {(loginStatus === 'idle' || loginStatus === 'error') && (
@@ -1382,7 +1385,7 @@ function RemoteTerminal() {
                                     {t('remote_terminal.workspace.check_button')}
                                 </button>
                             </div>
-                            <div className="shrink-0 flex items-center gap-3 bg-white dark:bg-base-100 border border-gray-200 dark:border-base-200 rounded-xl px-4 py-3">
+                            <div className="shrink-0 flex items-center gap-1.5 @3xl/remote:gap-2 bg-white dark:bg-base-100 border border-gray-200 dark:border-base-200 rounded-xl px-2 @3xl/remote:px-4 py-3">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
                                     <FolderOpen className="w-4 h-4 text-gray-400 shrink-0" />
                                     <span
@@ -1391,52 +1394,73 @@ function RemoteTerminal() {
                                     >
                                         {activeTab.localDir || t('remote_terminal.inventory.remote_workspace', { slug: activeTab.slug })}
                                     </span>
-                                    <span className="text-xs text-gray-400 shrink-0">({activeTab.slug})</span>
+                                    <span className="hidden @3xl/remote:inline text-xs text-gray-400 shrink-0">({activeTab.slug})</span>
                                 </div>
                                 {!activeTab.localDir && (
                                     <button
+                                        aria-label={t('remote_terminal.inventory.bind_folder')}
+                                        title={t('remote_terminal.inventory.bind_folder')}
                                         onClick={() => void handleBindLocalFolder(activeTab.tabId)}
                                         disabled={authRequired}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-base-200 disabled:opacity-40"
+                                        className="flex items-center gap-1.5 px-2 @3xl/remote:px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 dark:bg-base-200 shrink-0 disabled:opacity-40"
                                     >
                                         <FolderOpen className="w-3.5 h-3.5" />
-                                        {t('remote_terminal.inventory.bind_folder')}
+                                        <span className="hidden @3xl/remote:inline">{t('remote_terminal.inventory.bind_folder')}</span>
                                     </button>
                                 )}
                                 <button
+                                    aria-label={t('remote_terminal.sync_now_button')}
+                                    title={t('remote_terminal.sync_now_button')}
                                     onClick={() => handleSyncFolder(activeTab.tabId)}
                                     disabled={!activeTab.localDir || authRequired || activeTab.syncStatus === 'syncing' || !['synced', 'initialization_required', 'confirmation_required', 'upload_required'].includes(activeTab.workspaceStatus)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                                    className="flex items-center gap-1.5 px-2 @3xl/remote:px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                                 >
                                     <RefreshCw className={`w-3.5 h-3.5 ${activeTab.syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                                    {t('remote_terminal.sync_now_button')}
+                                    <span className="hidden @3xl/remote:inline">{t('remote_terminal.sync_now_button')}</span>
                                 </button>
                                 <button
+                                    aria-label={t('remote_terminal.git.branch_button')}
+                                    title={t('remote_terminal.git.branch_button')}
+                                    onClick={() => setGitBranchTerminalId(activeTab.activeTerminalId)}
+                                    disabled={!activeTab.activeTerminalId || authRequired || activeTab.syncStatus === 'syncing'}
+                                    className="flex items-center gap-1.5 px-2 @3xl/remote:px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                                >
+                                    <GitBranch className="w-3.5 h-3.5" />
+                                    <span className="hidden @3xl/remote:inline">{t('remote_terminal.git.branch_button')}</span>
+                                </button>
+                                <button
+                                    aria-label={t('remote_terminal.git.push_button')}
                                     onClick={() => setGitPushTerminalId(activeTab.activeTerminalId)}
                                     disabled={!activeTab.activeTerminalId || authRequired || activeTab.syncStatus === 'syncing'}
                                     title={t('remote_terminal.git.push_description')}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                                    className="flex items-center gap-1.5 px-2 @3xl/remote:px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                                 >
                                     <GitCommitVertical className="w-3.5 h-3.5" />
-                                    {t('remote_terminal.git.push_button')}
+                                    <span className="hidden @3xl/remote:inline">{t('remote_terminal.git.push_button')}</span>
                                 </button>
                                 <button
+                                    aria-label={t('remote_terminal.share_terminal_button')}
                                     onClick={() => handleShareTerminal(activeTab.activeTerminalId!)}
                                     disabled={!activeTab.activeTerminalId || isSharing}
                                     title={t('remote_terminal.share_terminal_tooltip')}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                                    className="flex items-center gap-1.5 px-2 @3xl/remote:px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-base-200 dark:text-gray-300 dark:hover:bg-base-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                                 >
                                     {isSharing
                                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                         : <Share2 className="w-3.5 h-3.5" />}
-                                    {t('remote_terminal.share_terminal_button')}
+                                    <span className="hidden @3xl/remote:inline">{t('remote_terminal.share_terminal_button')}</span>
                                 </button>
                                 <span
                                     title={syncStatusText(activeTab)}
-                                    className={`text-xs min-w-0 max-w-[40%] truncate ${activeTab.syncStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'
+                                    aria-label={syncStatusText(activeTab)}
+                                    className={`flex items-center gap-1.5 text-xs shrink-0 @3xl/remote:shrink min-w-0 max-w-[40%] ${activeTab.syncStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'
                                         }`}
                                 >
-                                    {syncStatusText(activeTab)}
+                                    {activeTab.syncStatus === 'syncing' ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                        : activeTab.syncStatus === 'error' ? <XCircle className="w-3.5 h-3.5 shrink-0" />
+                                            : activeTab.filesSynced ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                                : <Clock className="w-3.5 h-3.5 shrink-0" />}
+                                    <span className="hidden @3xl/remote:inline truncate">{syncStatusText(activeTab)}</span>
                                 </span>
                             </div>
 
@@ -1543,10 +1567,21 @@ function RemoteTerminal() {
                     )}
                 </>
             )}
+            <GitBranchModal open={gitBranchTerminalId !== null} terminalId={gitBranchTerminalId || undefined}
+                onClose={() => setGitBranchTerminalId(null)} describeError={describeRemoteError}
+                onChanged={(branch) => {
+                    showToast(t('remote_terminal.git.branch_success', { branch }), 'success');
+                    const tabId = terminals[gitBranchTerminalId || '']?.tabId;
+                    if (tabId) updateFolderSync(tabId, { workspaceStatus: 'unknown', workspaceError: null });
+                }} />
             <GitImportModal open={gitImportOpen} tools={availableTools} onClose={() => setGitImportOpen(false)}
                 onImported={handleGitImported} describeError={describeRemoteError} />
             <GitImportModal open={gitPushTerminalId !== null} terminalId={gitPushTerminalId || undefined}
-                initialRepoUrl={gitRepoUrlsRef.current.get(gitPushTerminalId || '') || ''}
+                initialRepoUrl={readGitRepoUrl(ready, folders[terminals[gitPushTerminalId || '']?.tabId]?.slug || '')}
+                onRepoUrlSaved={(url) => {
+                    const slug = folders[terminals[gitPushTerminalId || '']?.tabId]?.slug;
+                    if (slug) saveGitRepoUrl(ready, slug, url);
+                }}
                 tools={availableTools} onClose={() => setGitPushTerminalId(null)}
                 onImported={handleGitImported} onPushed={() => showToast(t('remote_terminal.git.push_success'), 'success')}
                 describeError={describeRemoteError} />

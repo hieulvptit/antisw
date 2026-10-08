@@ -1463,22 +1463,48 @@ pub async fn save_git_credentials(credential: serde_json::Value) -> AppResult<()
     Ok(())
 }
 
-pub async fn import_git_repository(repo_url: String, tool: String) -> AppResult<serde_json::Value> {
+pub async fn import_git_repository(repo_url: String, tool: String, branch: Option<String>) -> AppResult<serde_json::Value> {
     let _guard = terminal_operations().lock().await;
     validate_tool(&tool)?;
     let info = get_connection_info()?;
     crate::modules::remote_terminal_http::git_request(
         &info.priv_key_path, &info.ssh_user, reqwest::Method::POST, "import",
-        &serde_json::json!({ "repo_url": repo_url, "tool": tool }),
+        &serde_json::json!({ "repo_url": repo_url, "tool": tool, "branch": branch }),
     ).await
 }
 
-pub async fn push_git_repository(terminal_id: String, repo_url: String) -> AppResult<()> {
+pub async fn push_git_repository(terminal_id: String, repo_url: String, branch: Option<String>, create_branch: Option<bool>, commit_message: Option<String>) -> AppResult<()> {
     let _guard = terminal_operations().lock().await;
     let info = get_connection_info()?;
     crate::modules::remote_terminal_http::git_request(
         &info.priv_key_path, &info.ssh_user, reqwest::Method::POST, "push",
+        &serde_json::json!({ "terminal_id": terminal_id, "repo_url": repo_url, "branch": branch, "create_branch": create_branch.unwrap_or(false), "commit_message": commit_message }),
+    ).await?;
+    Ok(())
+}
+
+pub async fn list_git_branches(terminal_id: Option<String>, repo_url: String) -> AppResult<serde_json::Value> {
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::git_request(
+        &info.priv_key_path, &info.ssh_user, reqwest::Method::POST, "branches",
         &serde_json::json!({ "terminal_id": terminal_id, "repo_url": repo_url }),
+    ).await
+}
+
+pub async fn get_git_repository(terminal_id: String) -> AppResult<serde_json::Value> {
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::git_request(
+        &info.priv_key_path, &info.ssh_user, reqwest::Method::POST, "repository",
+        &serde_json::json!({ "terminal_id": terminal_id }),
+    ).await
+}
+
+pub async fn switch_git_branch(terminal_id: String, branch: String, create_branch: bool, repo_url: Option<String>) -> AppResult<()> {
+    let _guard = terminal_operations().lock().await;
+    let info = get_connection_info()?;
+    crate::modules::remote_terminal_http::git_request(
+        &info.priv_key_path, &info.ssh_user, reqwest::Method::POST, "switch",
+        &serde_json::json!({ "terminal_id": terminal_id, "branch": branch, "create_branch": create_branch, "repo_url": repo_url }),
     ).await?;
     Ok(())
 }

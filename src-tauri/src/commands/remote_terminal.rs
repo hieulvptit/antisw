@@ -172,11 +172,26 @@ pub async fn remote_terminal_save_git_credentials(credential: serde_json::Value)
 }
 
 #[tauri::command]
-pub async fn remote_terminal_import_git(repo_url: String, tool: String) -> AppResult<serde_json::Value> {
-    remote_terminal::import_git_repository(repo_url, tool).await
+pub async fn remote_terminal_import_git(repo_url: String, tool: String, branch: Option<String>) -> AppResult<serde_json::Value> {
+    remote_terminal::import_git_repository(repo_url, tool, branch).await
 }
 
 #[tauri::command]
-pub async fn remote_terminal_push_git(terminal_id: String, repo_url: String) -> AppResult<()> {
-    remote_terminal::push_git_repository(terminal_id, repo_url).await
+pub async fn remote_terminal_push_git(terminal_id: String, repo_url: String, branch: Option<String>, create_branch: Option<bool>, commit_message: Option<String>) -> AppResult<()> {
+    remote_terminal::push_git_repository(terminal_id, repo_url, branch, create_branch, commit_message).await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_list_git_branches(terminal_id: Option<String>, repo_url: String) -> AppResult<serde_json::Value> {
+    remote_terminal::list_git_branches(terminal_id, repo_url).await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_get_git_repository(terminal_id: String) -> AppResult<serde_json::Value> {
+    remote_terminal::get_git_repository(terminal_id).await
+}
+
+#[tauri::command]
+pub async fn remote_terminal_switch_git_branch(terminal_id: String, branch: String, create_branch: bool, repo_url: Option<String>) -> AppResult<()> {
+    remote_terminal::switch_git_branch(terminal_id, branch, create_branch, repo_url).await
 }

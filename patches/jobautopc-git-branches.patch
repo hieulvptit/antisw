@@ -1,0 +1,390 @@
+--- a/term-server.js
++++ b/term-server.js
+@@ -159,18 +159,23 @@
+ async function route(req, res) {
+   const url = req.url || '';
+ 
+-  if (url === '/term/git/credentials' || (req.method === 'POST' && ['/term/git/clone', '/term/git/pull', '/term/git/push', '/term/git/import'].includes(url))) {
++  if (url === '/term/git/credentials' || (req.method === 'POST' && ['/term/git/clone', '/term/git/pull', '/term/git/push', '/term/git/import', '/term/git/branches', '/term/git/repository', '/term/git/switch'].includes(url))) {
+     res.setHeader('Cache-Control', 'no-store');
+     const auth = termAuth.getAppToken(termAuth.parseBearer(req));
+     if (!auth) return sendJson(res, 401, { error: 'unauthorized' });
+     if (!canProvision(auth.ssoUsername) || !auth.workspaceFolder) return sendJson(res, 403, { error: 'forbidden' });
+     if (url === '/term/git/credentials') {
+-      if (req.method === 'GET') return sendJson(res, 200, await gitService.credentials.list(auth));
++      if (req.method === 'GET') return sendJson(res, 200, { ...await gitService.credentials.list(auth), capabilities: ['branches', 'clone_branch', 'commit_push', 'push_target', 'repository'] });
+       if (!['PUT', 'DELETE'].includes(req.method)) return sendJson(res, 405, { error: 'method_not_allowed' });
+       const body = await readJson(req);
+       if (req.method === 'PUT') return sendJson(res, 200, await gitService.credentials.save(auth, body));
+       await gitService.credentials.remove(auth, body && body.host);
+       res.writeHead(204); return res.end();
++    }
++    if (url === '/term/git/branches') {
++      const body = await readJson(req);
++      return sendJson(res, 200, body && body.terminal_id
++        ? await gitService.operate(auth, 'branches', body) : await gitService.listRemoteBranches(auth, body));
+     }
+     if (url === '/term/git/import') {
+       const body = await readJson(req);
+--- a/ssh_broker/git_service.js
++++ b/ssh_broker/git_service.js
+@@ -26,7 +26,7 @@
+     await fs.mkdir(target, { mode: 0o700 });
+     try {
+       const call = this.runtime.gitInvocation(folder, slug);
+-      await this.run(call, { operation: 'clone', repo_url: url.href, credential });
++      await this.run(call, { operation: 'clone', repo_url: url.href, credential, branch: body.branch });
+       // Start the CLI only AFTER clone, so it cannot create files in the
+       // initially empty destination or inspect a partially cloned repository.
+       const result = await this.registry.create(identity, { terminal_id, folder, slug, tool: body.tool },
+@@ -37,13 +37,28 @@
+       throw err;
+     }
+   }
+-  async operate(identity, operation, body) {
+-    if (!body || !/^[a-zA-Z0-9_-]{1,64}$/.test(body.terminal_id || '') || !['clone', 'pull', 'push'].includes(operation)) fail('invalid_git_operation', 400);
+-    const { terminal } = await this.registry.get(identity, body.terminal_id);
+-    if (terminal.status === 'closed') fail('terminal_closed');
++  async listRemoteBranches(identity, body) {
++    if (!identity || !/^cdx-[a-z0-9-]{1,24}$/.test(identity.workspaceFolder || '') || !body) fail('invalid_git_operation', 400);
+     const url = repoUrl(body.repo_url, this.credentials.allowed);
+     const credential = await this.credentials.read(identity, url.hostname);
+     if (!credential) fail('git_credentials_not_found', 409);
++    if (!this.runtime.enabled()) fail('git_sandbox_required', 503);
++    const slug = `git-branches-${crypto.randomBytes(8).toString('hex')}`;
++    const parent = this.runtime.safeDirectory(path.join(path.dirname(this.registry.dir), identity.workspaceFolder), true);
++    const target = path.join(parent, slug);
++    await fs.mkdir(target, { mode: 0o700 });
++    try {
++      return await this.run(this.runtime.gitInvocation(identity.workspaceFolder, slug),
++        { operation: 'branches', remote_only: true, repo_url: url.href, credential });
++    } finally { await fs.rm(target, { recursive: true, force: true }); }
++  }
++  async operate(identity, operation, body) {
++    if (!body || !/^[a-zA-Z0-9_-]{1,64}$/.test(body.terminal_id || '') || !['clone', 'pull', 'push', 'branches', 'repository', 'switch'].includes(operation)) fail('invalid_git_operation', 400);
++    const { terminal } = await this.registry.get(identity, body.terminal_id);
++    if (terminal.status === 'closed') fail('terminal_closed');
++    const url = operation === 'repository' || (operation === 'switch' && !body.repo_url) ? null : repoUrl(body.repo_url, this.credentials.allowed);
++    const credential = url ? await this.credentials.read(identity, url.hostname) : null;
++    if (url && !credential) fail('git_credentials_not_found', 409);
+     if (!this.runtime.enabled()) fail('git_sandbox_required', 503);
+     // Serialize by workspace, not terminal ID: multiple terminals can share it.
+     const name = crypto.createHash('sha256').update(JSON.stringify([terminal.folder, terminal.slug])).digest('hex');
+@@ -53,7 +68,7 @@
+     catch (err) { if (err.code === 'EEXIST') fail('git_workspace_busy'); fail('git_credentials_unavailable', 503); }
+     try {
+       const call = this.runtime.gitInvocation(terminal.folder, terminal.slug);
+-      return await this.run(call, { operation, repo_url: url.href, credential });
++      return await this.run(call, { operation, repo_url: url?.href, allowed_hosts: this.credentials.allowed, credential, branch: body.branch, create_branch: body.create_branch, commit_message: body.commit_message });
+     } finally { await fd.close(); await fs.unlink(lock).catch(() => {}); }
+   }
+   run(call, input) {
+@@ -67,15 +82,31 @@
+       child.on('error', () => finish(error('git_sandbox_unavailable', 503)));
+       child.stdout.on('data', (chunk) => {
+         output += chunk;
+-        if (output.length > 8192) { child.kill('SIGKILL'); finish(error('git_command_failed', 422)); }
++        if (output.length > 1024 * 1024) { child.kill('SIGKILL'); finish(error('git_command_failed', 422)); }
+       });
+       child.on('close', (code) => {
+         let result;
+         try { result = JSON.parse(output); } catch { return finish(error('git_sandbox_unavailable', 503)); }
+-        const errors = new Set(['git_command_failed', 'git_clone_requires_empty_workspace', 'git_remote_mismatch', 'invalid_git_repository', 'invalid_git_branch', 'git_auth_failed', 'git_access_denied', 'git_repo_not_found', 'git_tls_failed', 'git_network_failed', 'git_redirect_rejected', 'git_askpass_failed', 'git_storage_failed', 'git_push_rejected', 'git_no_commits', 'git_operation_timeout']);
++        const errors = new Set(['git_command_failed', 'git_clone_requires_empty_workspace', 'git_remote_mismatch', 'invalid_git_repository', 'invalid_git_branch', 'git_auth_failed', 'git_access_denied', 'git_repo_not_found', 'git_tls_failed', 'git_network_failed', 'git_redirect_rejected', 'git_askpass_failed', 'git_storage_failed', 'git_push_rejected', 'git_no_commits', 'git_operation_timeout', 'git_branch_exists', 'git_branch_not_found', 'git_checkout_failed', 'invalid_git_commit_message']);
+         if (code !== 0 || !result.ok) return finish(error(errors.has(result.error) ? result.error : 'git_command_failed', result.status === 409 ? 409 : 422));
+         // Return only server-controlled fields, never arbitrary worker output.
+-        finish(null, { ok: true, operation: input.operation, repo_url: input.repo_url });
++        const response = { ok: true, operation: input.operation, repo_url: input.repo_url };
++        if (input.operation === 'repository') {
++          response.repo_url = null;
++          if (result.repo_url) {
++            try { response.repo_url = repoUrl(result.repo_url, this.credentials.allowed).href; }
++            catch { return finish(error('git_command_failed', 422)); }
++          }
++        }
++        if (input.operation === 'branches' || input.operation === 'repository') {
++          if (!Array.isArray(result.branches) || result.branches.length > 10000
++              || result.branches.some((branch) => typeof branch !== 'string' || branch.length > 256)
++              || (result.current_branch !== null && typeof result.current_branch !== 'string')) return finish(error('git_command_failed', 422));
++          response.branches = result.branches; response.current_branch = result.current_branch;
++        }
++        if (input.operation === 'repository') response.capabilities = ['switch_branch'];
++        if (input.operation === 'switch') response.current_branch = result.current_branch;
++        finish(null, response);
+       });
+       child.stdin.end(JSON.stringify(input));
+     });
+--- a/ssh_broker/git_worker.js
++++ b/ssh_broker/git_worker.js
+@@ -12,7 +12,7 @@
+ const FAILURE_CODES = ['git_command_failed', 'git_clone_requires_empty_workspace', 'git_remote_mismatch',
+   'invalid_git_repository', 'invalid_git_branch', 'git_auth_failed', 'git_access_denied', 'git_repo_not_found',
+   'git_tls_failed', 'git_network_failed', 'git_redirect_rejected', 'git_askpass_failed', 'git_storage_failed',
+-  'git_push_rejected', 'git_no_commits', 'git_operation_timeout'];
++  'git_push_rejected', 'git_no_commits', 'git_operation_timeout', 'git_branch_exists', 'git_branch_not_found', 'git_checkout_failed', 'invalid_git_commit_message'];
+ function failureCode(error, stderr = '') {
+   // Inspect stderr in memory, but return fixed codes only. Never expose remote
+   // text, repository config, token-bearing URLs, or credentials to the client.
+@@ -37,10 +37,84 @@
+       else resolve(stdout.trim());
+     }));
+ }
++function validBranch(value) {
++  return typeof value === 'string' && value.length > 0 && value.length <= 256
++    && !value.startsWith('-') && !value.startsWith('/') && !value.endsWith('/') && !value.endsWith('.')
++    && !/[\s\x00-\x1f\x7f~^:?*\[\\]/.test(value) && !value.includes('..') && !value.includes('@{')
++    && value !== '@' && value.split('/').every((part) => part && !part.startsWith('.') && !part.endsWith('.lock'));
++}
++async function currentBranch(git) {
++  return (await git(['branch', '--show-current'])) || null;
++}
++async function branchInventory(git, url, remoteOnly = false) {
++  const local = remoteOnly ? '' : await git(['for-each-ref', '--format=%(refname:strip=2)', 'refs/heads/']);
++  const remote = await git(['ls-remote', '--heads', '--', url]);
++  const branches = [...new Set([...local.split('\n'), ...remote.split('\n').map((line) => line.split('\trefs/heads/')[1])])]
++    .filter(validBranch).sort();
++  if (branches.length > 10000) throw new Error('git_command_failed');
++  return { branches, current_branch: remoteOnly ? null : await currentBranch(git) };
++}
++async function switchBranch(input, git, url) {
++  const branch = input.branch || await currentBranch(git);
++  if (!validBranch(branch)) throw new Error('invalid_git_branch');
++  const local = (await git(['for-each-ref', '--format=%(refname:strip=2)', 'refs/heads/'])).split('\n');
++  if (input.create_branch === true) {
++    const remote = url ? await git(['ls-remote', '--heads', '--', url, `refs/heads/${branch}`]) : '';
++    if (local.includes(branch) || branch === await currentBranch(git) || remote) throw new Error('git_branch_exists');
++    await git(['switch', '-c', branch]);
++  } else if (branch !== await currentBranch(git)) {
++    try {
++      if (local.includes(branch)) await git(['switch', branch]);
++      else {
++        if (!url) throw new Error('git_branch_not_found');
++        const remote = await git(['ls-remote', '--heads', '--', url, `refs/heads/${branch}`]);
++        if (!remote) throw new Error('git_branch_not_found');
++        await git(['fetch', '--no-tags', '--no-recurse-submodules', '--', url, `refs/heads/${branch}`]);
++        await git(['switch', '-c', branch, 'FETCH_HEAD']);
++      }
++    } catch (err) {
++      if (FAILURE_CODES.includes(err.message) && err.message !== 'git_command_failed') throw err;
++      throw new Error('git_checkout_failed');
++    }
++  }
++  return branch;
++}
++async function preparePush(input, git, url) {
++  if (input.commit_message != null && (typeof input.commit_message !== 'string' || !input.commit_message.trim()
++      || input.commit_message.length > 4096 || /[\x00\x7f]/.test(input.commit_message))) throw new Error('invalid_git_commit_message');
++  const branch = await switchBranch(input, git, url);
++  if (input.commit_message != null) {
++    await git(['add', '--all', '--', '.']);
++    if (await git(['diff', '--cached', '--name-only'])) await git(['commit', '-m', input.commit_message.trim()]);
++  }
++  return branch;
++}
++async function repositoryUrl(git, allowed) {
++  try { return repoUrl(await git(['config', '--get', 'remote.origin.url']), allowed).href; }
++  catch { return null; }
++}
++async function pushToRepository(git, url, branch) {
++  await git(['-c', 'remote.origin.mirror=false', 'push', '--porcelain', '--no-verify', '--recurse-submodules=no', '--', url, `HEAD:refs/heads/${branch}`]);
++  // Keep the original remote if pushing to the new destination fails.
++  await git(['config', '--local', 'remote.origin.url', url]);
++}
+ async function execute(input) {
+   const { operation, repo_url, credential } = input;
+-  if (!['clone', 'pull', 'push'].includes(operation)) throw new Error('invalid_git_operation');
++  if (operation === 'repository' || (operation === 'switch' && !repo_url)) {
++    let stat;
++    try { stat = fs.lstatSync('/workspace/.git'); } catch { throw new Error('invalid_git_repository'); }
++    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('invalid_git_repository');
++    const env = { PATH: '/usr/bin:/bin', HOME: '/home/khdlcoder', LANG: 'C', LC_ALL: 'C',
++      GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
++    const git = (args) => run(args, env);
++    if (operation === 'switch') return { ok: true, current_branch: await switchBranch(input, git, null) };
++    const branches = (await git(['for-each-ref', '--format=%(refname:strip=2)', 'refs/heads/'])).split('\n').filter(validBranch).sort();
++    if (branches.length > 10000) throw new Error('git_command_failed');
++    return { ok: true, repo_url: await repositoryUrl(git, input.allowed_hosts), branches, current_branch: await currentBranch(git) };
++  }
++  if (!['clone', 'pull', 'push', 'branches', 'switch'].includes(operation)) throw new Error('invalid_git_operation');
+   const url = repoUrl(repo_url, [credential.host]);
++  if (input.branch != null && input.branch !== '' && !validBranch(input.branch)) throw new Error('invalid_git_branch');
+   const env = { PATH: '/usr/bin:/bin', HOME: '/home/khdlcoder', LANG: 'C', LC_ALL: 'C',
+     GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+     GIT_ASKPASS: '/opt/git-service/git_askpass.js', GIT_ASKPASS_SOCKET: '/tmp/git-askpass.sock' };
+@@ -63,24 +137,33 @@
+   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(env.GIT_ASKPASS_SOCKET, resolve); });
+   fs.chmodSync(env.GIT_ASKPASS_SOCKET, 0o600);
+   try {
++    if (operation === 'branches' && input.remote_only === true) {
++      return { ok: true, operation, ...await branchInventory((args) => run(args, env), url.href, true) };
++    }
+     if (operation === 'clone') {
+       if (fs.readdirSync('/workspace').length) { const err = new Error('git_clone_requires_empty_workspace'); err.status = 409; throw err; }
+-      await run(['clone', '--template=', '--no-recurse-submodules', '--', url.href, '.'], env);
++      await run(['clone', '--template=', '--no-recurse-submodules', ...(input.branch ? ['--branch', input.branch] : []), '--', url.href, '.'], env);
+     } else {
+       let stat;
+       try { stat = fs.lstatSync('/workspace/.git'); } catch { throw new Error('invalid_git_repository'); }
+       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('invalid_git_repository');
+-      const origin = await run(['config', '--get', 'remote.origin.url'], env);
+-      if (repoUrl(origin, [credential.host]).href !== url.href) throw new Error('git_remote_mismatch');
++      if (operation === 'pull') {
++        const origin = await run(['config', '--get', 'remote.origin.url'], env);
++        if (repoUrl(origin, [credential.host]).href !== url.href) throw new Error('git_remote_mismatch');
++      }
+     }
+-    await run(['config', '--local', 'user.name', credential.commit_name], env);
+-    await run(['config', '--local', 'user.email', credential.commit_email], env);
+-    if (operation !== 'clone') {
+-      const branch = await run(['symbolic-ref', '--quiet', '--short', 'HEAD'], env);
+-      if (!branch || branch.startsWith('-')) throw new Error('invalid_git_branch');
+-      await run(['check-ref-format', `refs/heads/${branch}`], env);
+-      if (operation === 'pull') await run(['pull', '--ff-only', '--no-rebase', '--no-recurse-submodules', '--', url.href, `refs/heads/${branch}`], env);
+-      else await run(['-c', 'remote.origin.mirror=false', 'push', '--porcelain', '--no-verify', '--recurse-submodules=no', '--', url.href, `HEAD:refs/heads/${branch}`], env);
++    const git = (args) => run(args, env);
++    if (operation === 'branches') return { ok: true, operation, ...await branchInventory(git, url.href) };
++    if (operation === 'switch') return { ok: true, current_branch: await switchBranch(input, git, url.href) };
++    await git(['config', '--local', 'user.name', credential.commit_name]);
++    await git(['config', '--local', 'user.email', credential.commit_email]);
++    if (operation === 'push') {
++      const branch = await preparePush(input, git, url.href);
++      await pushToRepository(git, url.href, branch);
++    } else if (operation === 'pull') {
++      const branch = await currentBranch(git);
++      if (!validBranch(branch)) throw new Error('invalid_git_branch');
++      await git(['pull', '--ff-only', '--no-rebase', '--no-recurse-submodules', '--', url.href, `refs/heads/${branch}`]);
+     }
+     return { ok: true, operation, repo_url: url.href };
+   } finally { await new Promise((resolve) => server.close(resolve)); }
+@@ -97,4 +180,4 @@
+     }
+   });
+ }
+-module.exports = { execute, BASE, failureCode, FAILURE_CODES };
++module.exports = { execute, BASE, failureCode, FAILURE_CODES, validBranch, branchInventory, preparePush, repositoryUrl, pushToRepository, switchBranch };
+--- /dev/null
++++ b/test/git_branches.test.js
+@@ -0,0 +1,123 @@
++'use strict';
++const { test } = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs/promises');
++const os = require('node:os');
++const path = require('node:path');
++const { execFileSync } = require('node:child_process');
++const { validBranch, branchInventory, preparePush, repositoryUrl, pushToRepository, switchBranch } = require('../ssh_broker/git_worker');
++async function fixture(t) {
++  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'git-branches-'));
++  t.after(() => fs.rm(root, { recursive: true, force: true }));
++  const remote = path.join(root, 'remote.git'); const repo = path.join(root, 'repo');
++  execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' });
++  execFileSync('git', ['init', '-b', 'main', repo], { stdio: 'ignore' });
++  const git = async (args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
++  await git(['config', 'user.name', 'Tester']); await git(['config', 'user.email', 'test@example.com']);
++  await fs.writeFile(path.join(repo, 'file.txt'), 'initial\n');
++  await fs.writeFile(path.join(repo, '.gitignore'), 'ignored.txt\n');
++  await git(['add', '.']); await git(['commit', '-m', 'initial']);
++  await git(['remote', 'add', 'origin', remote]); await git(['push', 'origin', 'main']);
++  return { repo, git, remote };
++}
++test('branch validation rejects option injection and invalid refs', () => {
++  for (const value of ['main', 'feature/new', 'release-1.2', 'nhánh']) assert.equal(validBranch(value), true);
++  for (const value of ['', '-main', 'a..b', 'a b', 'a\\b', 'a@{b', 'a.lock', '.hidden', 'a//b', 'a/', 'a?', 'a[', '@', 'x'.repeat(257)]) assert.equal(validBranch(value), false, value);
++});
++test('inventory combines local and remote branches, and supports remote-only clone selection', async (t) => {
++  const { git, remote } = await fixture(t);
++  await git(['branch', 'local-only']); await git(['push', 'origin', 'main:remote-only']);
++  assert.deepEqual(await branchInventory(git, remote), { branches: ['local-only', 'main', 'remote-only'], current_branch: 'main' });
++  assert.deepEqual(await branchInventory(git, remote, true), { branches: ['main', 'remote-only'], current_branch: null });
++});
++test('new branch commits changes and new files, preserves ignored files, and can push', async (t) => {
++  const { repo, git, remote } = await fixture(t);
++  await fs.writeFile(path.join(repo, 'file.txt'), 'updated\n'); await fs.writeFile(path.join(repo, 'new.txt'), 'new\n');
++  await fs.writeFile(path.join(repo, 'ignored.txt'), 'ignored\n');
++  assert.equal(await preparePush({ branch: 'feature/new', create_branch: true, commit_message: 'update files' }, git, remote), 'feature/new');
++  assert.equal(await git(['log', '-1', '--format=%s']), 'update files');
++  assert.equal(await git(['status', '--porcelain']), '');
++  assert.equal(await git(['ls-files', 'ignored.txt']), '');
++  await git(['push', 'origin', 'HEAD:refs/heads/feature/new']);
++  assert.match(await git(['ls-remote', '--heads', remote, 'refs/heads/feature/new']), /refs\/heads\/feature\/new$/);
++  await assert.rejects(preparePush({ branch: 'feature/new', create_branch: true }, git, remote), /git_branch_exists/);
++});
++test('remote-only branch is fetched before committing and an empty workspace adds no commit', async (t) => {
++  const { repo, git, remote } = await fixture(t);
++  await git(['push', 'origin', 'main:remote-only']);
++  const oldHead = await git(['rev-parse', 'HEAD']);
++  await preparePush({ branch: 'remote-only', commit_message: 'no changes' }, git, remote);
++  assert.equal(await git(['branch', '--show-current']), 'remote-only'); assert.equal(await git(['rev-parse', 'HEAD']), oldHead);
++  await fs.writeFile(path.join(repo, 'file.txt'), 'updated\n');
++  await preparePush({ branch: 'main', commit_message: 'on main' }, git, remote);
++  assert.equal(await git(['branch', '--show-current']), 'main'); assert.equal(await git(['log', '-1', '--format=%s']), 'on main');
++});
++test('collisions, missing branches, invalid messages and unsafe checkout fail without committing', async (t) => {
++  const { repo, git, remote } = await fixture(t);
++  await git(['push', 'origin', 'main:remote-only']);
++  await assert.rejects(preparePush({ branch: 'remote-only', create_branch: true }, git, remote), /git_branch_exists/);
++  await assert.rejects(preparePush({ branch: 'missing' }, git, remote), /git_branch_not_found/);
++  await assert.rejects(preparePush({ branch: 'new', create_branch: true, commit_message: ' ' }, git, remote), /invalid_git_commit_message/);
++  await git(['switch', '-c', 'other']); await fs.writeFile(path.join(repo, 'file.txt'), 'other\n');
++  await git(['commit', '-am', 'other']); await git(['switch', 'main']); await fs.writeFile(path.join(repo, 'file.txt'), 'unsaved\n');
++  const head = await git(['rev-parse', 'HEAD']);
++  await assert.rejects(preparePush({ branch: 'other', commit_message: 'should not commit' }, git, remote), /git_checkout_failed/);
++  assert.equal(await git(['rev-parse', 'HEAD']), head); assert.equal(await fs.readFile(path.join(repo, 'file.txt'), 'utf8'), 'unsaved\n');
++});
++test('push-only leaves working changes uncommitted; detached HEAD requires a branch choice', async (t) => {
++  const { repo, git, remote } = await fixture(t);
++  const head = await git(['rev-parse', 'HEAD']); await fs.writeFile(path.join(repo, 'file.txt'), 'unsaved\n');
++  assert.equal(await preparePush({}, git, remote), 'main'); assert.equal(await git(['rev-parse', 'HEAD']), head);
++  await git(['checkout', '--', 'file.txt']); await git(['checkout', '--detach']);
++  await assert.rejects(preparePush({}, git, remote), /invalid_git_branch/);
++  assert.equal(await preparePush({ branch: 'detached-work', create_branch: true }, git, remote), 'detached-work');
++});
++
++test('changing push destination updates origin only after a successful push', async (t) => {
++  const { git, remote } = await fixture(t);
++  const target = path.join(path.dirname(remote), 'new-target.git');
++  execFileSync('git', ['init', '--bare', target], { stdio: 'ignore' });
++  await pushToRepository(git, target, 'main');
++  assert.equal(await git(['config', '--get', 'remote.origin.url']), target);
++  assert.match(await git(['ls-remote', '--heads', target]), /refs\/heads\/main$/);
++  const badTarget = path.join(path.dirname(remote), 'missing.git');
++  await assert.rejects(pushToRepository(git, badTarget, 'main'));
++  assert.equal(await git(['config', '--get', 'remote.origin.url']), target);
++});
++test('repository metadata returns only safe allowed HTTPS origins, handles no origin', async () => {
++  const git = (url) => async () => url;
++  assert.equal(await repositoryUrl(git('https://gitlab.com/team/repo.git'), ['gitlab.com']), 'https://gitlab.com/team/repo.git');
++  for (const url of ['https://user:secret@gitlab.com/team/repo.git', 'git@gitlab.com:team/repo.git', 'https://other.test/team/repo.git', '']) {
++    assert.equal(await repositoryUrl(git(url), ['gitlab.com']), null);
++  }
++  assert.equal(await repositoryUrl(async () => { throw new Error('missing'); }, ['gitlab.com']), null);
++});
++
++test('standalone branch creation and switching preserve uncommitted files without network or commits', async (t) => {
++  const { repo, git } = await fixture(t);
++  await fs.writeFile(path.join(repo, 'file.txt'), 'work in progress\n');
++  await fs.writeFile(path.join(repo, 'new.txt'), 'new file\n');
++  const head = await git(['rev-parse', 'HEAD']);
++  const localGit = async (args) => {
++    assert.ok(!['push', 'fetch', 'ls-remote', 'commit', 'add'].includes(args[0]), args.join(' '));
++    return git(args);
++  };
++  assert.equal(await switchBranch({ branch: 'feature/work', create_branch: true }, localGit, null), 'feature/work');
++  assert.equal(await git(['branch', '--show-current']), 'feature/work');
++  assert.equal(await git(['rev-parse', 'HEAD']), head);
++  assert.equal(await fs.readFile(path.join(repo, 'file.txt'), 'utf8'), 'work in progress\n');
++  assert.equal(await fs.readFile(path.join(repo, 'new.txt'), 'utf8'), 'new file\n');
++  assert.equal(await switchBranch({ branch: 'main' }, localGit, null), 'main');
++  await assert.rejects(switchBranch({ branch: 'feature/work', create_branch: true }, localGit, null), /git_branch_exists/);
++  await assert.rejects(switchBranch({ branch: 'missing' }, localGit, null), /git_branch_not_found/);
++  await assert.rejects(switchBranch({ branch: '-invalid', create_branch: true }, localGit, null), /invalid_git_branch/);
++});
++test('standalone branch switch rejects conflicting changes without modifying their contents', async (t) => {
++  const { repo, git } = await fixture(t);
++  await git(['switch', '-c', 'other']); await fs.writeFile(path.join(repo, 'file.txt'), 'other branch\n');
++  await git(['commit', '-am', 'other']); await git(['switch', 'main']);
++  await fs.writeFile(path.join(repo, 'file.txt'), 'unsaved changes\n');
++  await assert.rejects(switchBranch({ branch: 'other' }, git, null), /git_checkout_failed/);
++  assert.equal(await git(['branch', '--show-current']), 'main');
++  assert.equal(await fs.readFile(path.join(repo, 'file.txt'), 'utf8'), 'unsaved changes\n');
++});

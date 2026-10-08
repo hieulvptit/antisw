@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Maximize2, RefreshCw, Clock, ShieldAlert, Tag, Activity } from 'lucide-react';
-import { useViewStore } from '../../stores/useViewStore';
+import { RefreshCw, Clock, ShieldAlert, Tag, Activity } from 'lucide-react';
 import { useAccountStore } from '../../stores/useAccountStore';
 import { isTauri } from '../../utils/env';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -8,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { formatTimeRemaining, formatCompactNumber } from '../../utils/format';
-import { enterMiniMode, exitMiniMode } from '../../utils/windowManager';
+import { enterMiniMode } from '../../utils/windowManager';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 
@@ -25,7 +24,6 @@ interface ProxyRequestLog {
 }
 
 export default function MiniView() {
-    const { setMiniView } = useViewStore();
     const { currentAccount, refreshQuota, fetchCurrentAccount } = useAccountStore();
     const { t } = useTranslation();
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -102,12 +100,6 @@ export default function MiniView() {
             setTimeout(() => setIsRefreshing(false), 800);
         }
     };
-
-    const handleMaximize = async () => {
-        await exitMiniMode();
-        setMiniView(false);
-    };
-
 
     const handleMouseDown = () => {
         if (isTauri()) {
@@ -218,14 +210,6 @@ export default function MiniView() {
                             title={t('common.refresh', 'Refresh')}
                         >
                             <RefreshCw size={14} className={clsx(isRefreshing && "animate-spin text-blue-500")} />
-                        </button>
-                        <div className="w-px h-3 bg-gray-300 dark:bg-white/20 mx-1" />
-                        <button
-                            onClick={handleMaximize}
-                            className="p-2 rounded-lg hover:bg-gray-200/50 dark:hover:bg-white/10 transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-                            title={t('common.maximize', 'Full View')}
-                        >
-                            <Maximize2 size={14} />
                         </button>
                     </div>
                 </div>
