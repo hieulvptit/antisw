@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input, Modal, QRCode } from 'antd';
+import { Input, Modal, QRCode, Tooltip } from 'antd';
 import { listen } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
     LogIn, Loader2, Terminal as TerminalIcon, XCircle, CheckCircle2, Clock,
-    FolderOpen, RefreshCw, Plus, X, Share2, Pencil, GitBranch, GitCommitVertical,
+    FolderOpen, RefreshCw, Plus, X, Share2, Pencil, GitBranch, GitCommitVertical, Info, AlertTriangle, Download,
 } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -249,6 +249,13 @@ function RemoteTerminal() {
     }, [folderOrder, folders]);
 
     const activeTab = activeTabId ? folders[activeTabId] : null;
+    const workspaceStatusText = activeTab ? (
+        !activeTab.localDir ? t('remote_terminal.inventory.remote_only') : activeTab.workspaceError || (
+            !activeTab.filesSynced && ['unknown', 'initialization_required', 'upload_required'].includes(activeTab.workspaceStatus)
+                ? t('remote_terminal.sync.new_project')
+                : t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)
+        )
+    ) : '';
 
     // xterm.js does NOT grab keyboard focus on its own when `term.open()` is
     // called, and toggling a container from display:none back to block does
@@ -1356,35 +1363,10 @@ function RemoteTerminal() {
 
                     {activeTab && (
                         <>
-                            {/* Sync bar, scoped to the active folder tab.
-                                Deliberately NOT `flex-wrap`, and the status text
-                                below truncates instead of shrink-0: this bar sits
-                                directly above the terminal viewport, which is
-                                `flex-1`, so ANY change in this bar's height
-                                resizes the terminal. The status text grows to
-                                "Syncing — <rsync path>" and changed on every
-                                line rsync printed, so it wrapped to a second
-                                row and back hundreds of times per sync - each
-                                one a real SIGWINCH to the remote tmux. codex
-                                could not repaint fast enough and the screen
-                                ended up blank. Nothing about a status message
-                                is allowed to move the terminal. */}
-                            <div className="shrink-0 flex items-center gap-3 min-h-16 rounded-xl border border-gray-200 dark:border-base-200 px-4 py-2" role="status" aria-live="polite">
-                                <span className={`text-xs flex-1 ${['download_required', 'commit_required', 'conflict', 'error'].includes(activeTab.workspaceStatus) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'}`} title={activeTab.workspaceError || undefined}>
-                                    {!activeTab.localDir ? t('remote_terminal.inventory.remote_only') : activeTab.workspaceError || (
-                                        !activeTab.filesSynced && ['unknown', 'initialization_required', 'upload_required'].includes(activeTab.workspaceStatus) ? t('remote_terminal.sync.new_project')
-                                            : t(`remote_terminal.workspace.${activeTab.workspaceStatus}`)
-                                    )}
-                                </span>
-                                {activeTab.workspaceStatus === 'download_required' && (
-                                    <button onClick={() => setSyncChoiceTabId(activeTab.tabId)} disabled={activeTab.syncStatus === 'syncing'} className="text-xs rounded-full bg-blue-600 text-white px-3 py-1.5 disabled:opacity-40">
-                                        {t('remote_terminal.workspace.download_button')}
-                                    </button>
-                                )}
-                                <button onClick={() => checkWorkspace(activeTab.tabId)} disabled={activeTab.workspaceStatus === 'checking' || activeTab.syncStatus === 'syncing'} className="text-xs rounded-full bg-gray-100 dark:bg-base-200 px-3 py-1.5 disabled:opacity-40">
-                                    {t('remote_terminal.workspace.check_button')}
-                                </button>
-                            </div>
+                            {/* Keep the sync bar on one row and status messages in
+                                tooltips. Changing its height resizes the terminal
+                                and sends SIGWINCH to remote tmux; frequent sync
+                                output previously caused blank terminal screens. */}
                             <div className="shrink-0 flex items-center gap-1.5 @3xl/remote:gap-2 bg-white dark:bg-base-100 border border-gray-200 dark:border-base-200 rounded-xl px-2 @3xl/remote:px-4 py-3">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
                                     <FolderOpen className="w-4 h-4 text-gray-400 shrink-0" />
@@ -1450,18 +1432,42 @@ function RemoteTerminal() {
                                         : <Share2 className="w-3.5 h-3.5" />}
                                     <span className="hidden @3xl/remote:inline">{t('remote_terminal.share_terminal_button')}</span>
                                 </button>
-                                <span
-                                    title={syncStatusText(activeTab)}
-                                    aria-label={syncStatusText(activeTab)}
-                                    className={`flex items-center gap-1.5 text-xs shrink-0 @3xl/remote:shrink min-w-0 max-w-[40%] ${activeTab.syncStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'
-                                        }`}
-                                >
-                                    {activeTab.syncStatus === 'syncing' ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                                        : activeTab.syncStatus === 'error' ? <XCircle className="w-3.5 h-3.5 shrink-0" />
-                                            : activeTab.filesSynced ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                                : <Clock className="w-3.5 h-3.5 shrink-0" />}
-                                    <span className="hidden @3xl/remote:inline truncate">{syncStatusText(activeTab)}</span>
-                                </span>
+                                <div className="flex items-center gap-0.5 rounded-full bg-gray-100 dark:bg-base-200 p-0.5 shrink-0">
+                                    <Tooltip title={workspaceStatusText}>
+                                        <span tabIndex={0} role="status" aria-live="polite" className={`flex items-center p-1.5 rounded-full ${['download_required', 'commit_required', 'conflict', 'error'].includes(activeTab.workspaceStatus) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                                            {['download_required', 'commit_required', 'conflict', 'error'].includes(activeTab.workspaceStatus)
+                                                ? <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+                                                : activeTab.workspaceStatus === 'synced'
+                                                    ? <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                                    : <Info className="w-3.5 h-3.5" aria-hidden="true" />}
+                                            <span className="sr-only">{workspaceStatusText}</span>
+                                        </span>
+                                    </Tooltip>
+                                    {activeTab.workspaceStatus === 'download_required' && (
+                                        <Tooltip title={t('remote_terminal.workspace.download_button')}>
+                                            <button aria-label={t('remote_terminal.workspace.download_button')} onClick={() => setSyncChoiceTabId(activeTab.tabId)} disabled={activeTab.syncStatus === 'syncing'} className="rounded-full bg-blue-600 text-white p-1.5 hover:bg-blue-700 transition-colors disabled:opacity-40">
+                                                <Download className="w-3.5 h-3.5" />
+                                            </button>
+                                        </Tooltip>
+                                    )}
+                                    <Tooltip title={t('remote_terminal.workspace.check_button')}>
+                                        <button aria-label={t('remote_terminal.workspace.check_button')} onClick={() => checkWorkspace(activeTab.tabId)} disabled={activeTab.workspaceStatus === 'checking' || activeTab.syncStatus === 'syncing'} className="rounded-full text-gray-700 dark:text-gray-300 p-1.5 hover:bg-gray-200 dark:hover:bg-base-300 transition-colors disabled:opacity-40">
+                                            <RefreshCw className={`w-3.5 h-3.5 ${activeTab.workspaceStatus === 'checking' ? 'animate-spin' : ''}`} />
+                                        </button>
+                                    </Tooltip>
+                                    <Tooltip title={syncStatusText(activeTab)}>
+                                        <span
+                                            tabIndex={0}
+                                            aria-label={syncStatusText(activeTab)}
+                                            className={`flex items-center p-1.5 rounded-full ${activeTab.syncStatus === 'error' ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}`}
+                                        >
+                                            {activeTab.syncStatus === 'syncing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                : activeTab.syncStatus === 'error' ? <XCircle className="w-3.5 h-3.5" />
+                                                    : activeTab.filesSynced ? <CheckCircle2 className="w-3.5 h-3.5" />
+                                                        : <Clock className="w-3.5 h-3.5" />}
+                                        </span>
+                                    </Tooltip>
+                                </div>
                             </div>
 
                             {/* Inner terminal tab strip, scoped to the active folder tab */}

@@ -1,6 +1,6 @@
 [package]
 name = "antigravity_sw"
-version = "6.0.3"
+version = "6.0.4"
 description = "Anti tools for AI"
 authors = ["you"]
 license = "CC-BY-NC-SA-4.0"
